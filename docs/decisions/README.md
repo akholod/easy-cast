@@ -1,0 +1,21 @@
+# Architecture decision records
+
+- [003 — Request shape is a Stage-0 question](003-request-shape-is-a-stage-0-question.md): the wire format of the undocumented upload endpoint is resolved by the probe harness, not assumed.
+- [004 — Marker and ledger are separate comment blocks](004-marker-and-ledger-are-separate-blocks.md): the identity marker and the `[digest, url]` ledger live in independent, versioned delimiters, capped at 64 entries.
+- [005 — Probe harness lives in the repo behind an interlock](005-probe-harness-behind-an-interlock.md): destructive experiments against real GitHub are versioned, tested code gated by a four-part interlock.
+- [006 — 100 MB is a local policy limit, not a GitHub limit](006-local-policy-limit-not-a-github-limit.md): `--plan` is dropped; the reject threshold is our own named policy, never a claim about GitHub's real limit.
+- [007 — gh CLI sits behind a GitHubApi interface](007-gh-cli-behind-a-githubapi-interface.md): every GitHub read/write outside the upload endpoint goes through one implementation, one choke point.
+- [008 — Repeat attach with the same key replaces and accumulates](008-repeat-attach-replaces-and-accumulates.md): a re-run replaces visible comment content but the ledger only ever accumulates.
+- [009 — Transport phases: no-request-bytes vs. request-started](009-transport-phases.md): retry safety is decided by whether any request byte reached the wire, not by protocol knowledge.
+- [010 — --confirm-plan binds a run to a plan, not to consent](010-confirm-plan-binds-a-run-to-a-plan.md): the token guarantees content/target/policy match; it cannot and does not prove a human looked.
+- [011 — Local event-sourced WAL with strictly scoped dedup](011-local-event-sourced-wal-with-scoped-dedup.md): deduplication is scoped to `(owner, repo, kind, number, key)` only, never a ledger/journal union.
+- [012 — A semantic change to the conversion profile changes its id](012-conversion-profile-id-changes-on-semantic-change.md): the ledger key `digest` cannot reuse a URL produced under a different conversion profile.
+- [013 — Upload identity and gh identity must match](013-upload-and-gh-identity-must-match.md): mismatched credentials refuse the run outright, before any upload.
+- [014 — Default --key derives from source hashes](014-default-key-derives-from-source-hashes.md): the default key is content-derived and independent of file names or `ffmpeg` availability.
+- [015 — Compose path versus ledger-only path](015-compose-path-versus-ledger-only-path.md): a fresh comment is composed whole; an existing one has only its ledger block replaced.
+- [016 — Immutable single-read snapshot](016-immutable-single-read-snapshot.md): each source file is captured once and reused for every hash, conversion, and upload step.
+- [017 — Repair step, not a guard](017-repair-step-not-a-guard.md): an unsynced backlog is fixed by the next real `attach` call, not turned into a permanent lockout.
+- [018 — In-batch ledger overflow versus MRU eviction](018-in-batch-ledger-overflow-versus-mru-eviction.md): an oversized batch is rejected before upload; MRU eviction only ever applies between runs.
+- [019 — Unknown versions are quarantined, never interpreted](019-unknown-versions-are-quarantined.md): every versioned artifact fails closed on an unrecognized version instead of guessing.
+- [020 — Public npm package under MIT](020-public-npm-package-under-mit.md): publication is public and MIT-licensed, making `scrubObservation()` a blocking security gate.
+- [021 — Decision Gate outcome](021-decision-gate-outcome.md): DG1/DG2/DG3/DG5 as decided, and why DG4 is deliberately left open until after the Stage 0 public-asset probe.
