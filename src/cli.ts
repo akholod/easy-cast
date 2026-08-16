@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 import { resolve } from 'node:path';
 import { HELP, parseArgs, type ParsedArgs } from './cli-args.js';
-import { toEasyCastError } from './errors.js';
+import { targetNotFound, toEasyCastError } from './errors.js';
 import { buildOutput, renderJson, type CliJsonOutput } from './output.js';
 import { redact, redactValues } from './secret/redact.js';
 import { createJournal } from './journal.js';
 import { recover } from './recover.js';
 import { runAttach } from './pipeline.js';
-import { stubUploadPort } from './upload/port.js';
+import { createUploadPort } from './upload/upload.js';
 import { createGhApi } from './github/gh-cli.js';
 import { spawnScrubbed } from './secret/spawn.js';
 import { assertSameIdentity, ghAllowEnv, resolveToken } from './secret/token.js';
@@ -209,8 +209,18 @@ async function execute(parsed: ParsedArgs, io: Io): Promise<CliJsonOutput> {
     {
       api,
       journal,
-      uploads: stubUploadPort,
+      uploads: createUploadPort(),
       resolveTarget: async () => target,
+      uploadTarget: async () => {
+        const info = await api.getRepo(target.owner, target.repo);
+        if (!info) {
+          throw targetNotFound(`${target.owner}/${target.repo} is no longer visible to this token.`, {
+            owner: target.owner,
+            repo: target.repo,
+          });
+        }
+        return { owner: target.owner, repo: target.repo, repositoryId: info.id };
+      },
       convert: async (snapshot, noConvert) => {
         const result = await convert(snapshot, noConvert ? null : H264_PROFILE, Number.MAX_SAFE_INTEGER, {
           spawn: spawnScrubbed,

@@ -4,5 +4,11 @@ coverage/
 /.omc/
 .easy-cast/tmp/
 
+# An attachment URL is a capability: anyone who quotes it in a comment they can
+# see gets a signed link to the bytes (docs/decisions/022). A journal committed
+# to a PUBLIC repository therefore publishes every asset it lists. This
+# repository is public, so its own journal stays out of it.
+.easy-cast/journal.jsonl
+
 # Ralph session working notes, not project content
 progress.txt

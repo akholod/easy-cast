@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "provenance": {
+    "run": "stage 0, 2026-08-16, against akholod/easy-cast-probe and akholod/easy-cast-probe-public",
+    "observations": "fixtures/endpoint/observations.jsonl",
+    "note": "Every row below was produced by a real request. Anything not listed here is deliberately unmatched and resolves to endpoint_unavailable."
+  },
+  "wire": {
+    "method": "POST",
+    "host": "uploads.github.com",
+    "path": "/user-attachments/assets",
+    "query": ["repository_id", "name", "size"],
+    "headers": {
+      "Authorization": "Bearer <token>",
+      "Content-Type": "<the media type, which must match the file extension>"
+    },
+    "body": "the raw bytes",
+    "phases": 1,
+    "observedNote": "Single phase. There is no policy call and no second host. A request with no body answers 400 Invalid Content-Type, so the Content-Type header is what carries the declared type."
+  },
+  "rows": [
+    {
+      "status": 201,
+      "bodySignals": ["\"url\""],
+      "outcome": "ok",
+      "extract": "url",
+      "observed": "201 {\"url\":\"https://github.com/user-attachments/assets/<uuid>\"}"
+    },
+    {
+      "status": 404,
+      "bodySignals": ["Not Found"],
+      "outcome": "no_access_or_not_found",
+      "retryable": false,
+      "observed": "Returned identically for: a wrong repository_id, a repository we can read but cannot push to (cli/cli), and an omitted repository_id.",
+      "diagnosisMustStayDisjunctive": true,
+      "why": "Three different causes produce a byte-identical response. Naming one of them would be a guess presented as a diagnosis."
+    },
+    {
+      "status": 422,
+      "bodySignals": ["content_type is not included in the list of allowed content types", "name has a file extension that does not match the content type"],
+      "outcome": "rejected_by_endpoint",
+      "retryable": false,
+      "observed": "Both messages can arrive in the SAME response, in errors[]. A .log declared as text/plain produced the first alone; a .png declared as application/octet-stream produced both.",
+      "multiSignal": true,
+      "why": "A body can carry more than one reason at once, so the message must be disjunctive rather than picking whichever matched first."
+    },
+    {
+      "status": 400,
+      "bodySignals": ["Invalid Content-Type"],
+      "outcome": "rejected_by_endpoint",
+      "retryable": false,
+      "observed": "Sent with no body and no Content-Type header."
+    }
+  ],
+  "default": {
+    "outcome": "endpoint_unavailable",
+    "why": "Anything not matched above leaves the state of the remote side unknown. Uploads cannot be withdrawn, so an unrecognised answer is never guessed at and never retried."
+  },
+  "unresolvedUnknowns": [
+    "Abuse detection and rate limiting were not observed. A matrix of this size cannot trigger them, so a 403 with an HTML body remains possible and unclassified — it would resolve to endpoint_unavailable, which is the safe direction.",
+    "Behaviour with an installation token (ghs_) was not tested; CI is out of scope and GITHUB_TOKEN is deliberately never read.",
+    "A classic PAT without the repo scope was not tested — that credential has to be issued by hand.",
+    "Behaviour when the connection drops after the body has been sent was not induced deliberately; the transport treats it as request-started, which is the conservative reading.",
+    "Video types (.mp4, .webm, .mov) and the size ceiling were not probed: each success would have cost another permanent asset, and the image cases already establish the accept/reject shape."
+  ]
+}

@@ -92,14 +92,14 @@ export interface CliJsonOutput {
 /**
  * Said on every successful attach, because the alternative is a reload loop.
  *
- * Hedged deliberately: this was observed once, and stage 0 has not run, so it is
- * not yet established behaviour. The instruction it implies — do not re-upload —
- * is safe whether or not the observation generalises.
+ * Established by stage 0: the canonical asset URL answers 404 to a direct GET in
+ * every case tested, cited or not. What actually serves the image is a short-lived
+ * signed URL that GitHub substitutes when it renders the comment.
  */
 export const URL_NOT_LIVE_UNTIL_QUOTED =
-  'A fresh attachment URL is expected to answer 404 until something quotes it; the comment above ' +
-  'is what activates it. (Observed once, not yet established — stage 0 has not run.) Either way: ' +
-  'do not re-upload, and do not treat a 404 here as a failure.';
+  'The attachment URL above answers 404 if you fetch it directly — that is normal and permanent, ' +
+  'not a failure. GitHub serves the image through a short-lived signed URL it substitutes when ' +
+  'rendering the comment. Do not re-upload: a second upload cannot be undone.';
 
 export interface OutputDraft {
   readonly command: 'upload' | 'attach' | 'recover';

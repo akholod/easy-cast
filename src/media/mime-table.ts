@@ -22,6 +22,7 @@ interface MimeTableRow extends MediaKind {
 export const MIME_TABLE_SOURCE = {
   sourceUrl:
     'https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/attaching-files',
+  checkedAgainstEndpointAt: '2026-08-16',
   retrievedAt: '2026-08-16',
 } as const;
 

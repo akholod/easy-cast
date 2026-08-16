@@ -88,3 +88,52 @@ The gap it stood for is real and must be closed when the real classifier is inte
 
 This cannot bite today — the upload port is a stub and nothing has ever been uploaded — which is why
 it was deferred rather than rushed. It becomes reachable the moment US-020 lands.
+
+---
+
+## Stage 0 result, 2026-08-16
+
+Stage 0 **has now run**. The section above that says otherwise is superseded here.
+
+**Live smoke: passed.** The real CLI, against `akholod/easy-cast-probe`:
+
+| Step | Result |
+| --- | --- |
+| `--dry-run` | printed the plan and a `--confirm-plan` token; nothing uploaded |
+| real `attach` | exit 0, one asset uploaded, comment posted |
+| the identical command again | exit 0, `assetsCreated: 0`, file reported `reused` with the same URL, comment **updated** rather than added |
+
+Both levels of idempotency are therefore confirmed against live GitHub, not only
+against fixtures: the marker found the tool's own comment, and the ledger prevented
+a second upload of the same bytes.
+
+The classifier's default branch did **not** fire during the smoke, so the release
+stop rule is satisfied on that count.
+
+### What changed as a result
+
+- The wire format is established and `wire.ts` implements it: single phase,
+  `repository_id`/`name`/`size` in the query, the declared type in the header.
+- `--allow-public` survives, for a corrected reason — see ADR 022. Exposure follows
+  where the URL is quoted, not the repository it was uploaded against.
+- The 404-until-quoted advisory is no longer hedged: the canonical URL answers 404
+  to a direct fetch permanently, and the image is served through a short-lived
+  signed URL substituted at render time.
+
+### Still blocking a release
+
+| Item | State |
+| --- | --- |
+| `upload` command | still not wired; answers `endpoint_unavailable` |
+| Pre-upload body budget against an existing comment | still owed by US-020 — see the debt section above |
+| Video types and the size ceiling | unprobed; each success costs a permanent attachment, and the image cases already establish the accept/reject shape |
+| Classic PAT without `repo`, installation tokens | untested; both need credentials issued by hand |
+| Abuse detection / rate limiting | not observable at this matrix size; would resolve to `endpoint_unavailable`, the safe direction |
+
+### Permanent artefacts
+
+Five attachments were created and **cannot be deleted**: four by the probe, one by
+the live smoke. Four probe issues were opened across both probe repositories and
+have been closed by `scripts/probe/cleanup.ts`. Closed, not deleted — the REST API
+offers no issue deletion, and the harness reports what happened rather than what
+was hoped for.

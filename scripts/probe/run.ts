@@ -12,7 +12,14 @@ import { serializeObservation } from './scrub.js';
  * and is never published (`tsconfig.build.json` covers `src` only).
  */
 
-const OBSERVATIONS = resolve(import.meta.dirname, '../../fixtures/endpoint/observations.jsonl');
+/**
+ * Overridable because the probe is compiled to a scratch directory before it runs
+ * — without this the path would resolve next to the build output and the evidence
+ * would land somewhere nobody looks.
+ */
+const OBSERVATIONS =
+  process.env.EASY_CAST_OBSERVATIONS ??
+  resolve(import.meta.dirname, '../../fixtures/endpoint/observations.jsonl');
 
 export interface Observation {
   readonly run: number;

@@ -129,6 +129,7 @@ function harness(
         return { token: 'gho_fake', login: 'akholod' };
       },
       assertIdentity: () => trace.push('identity'),
+      uploadTarget: async () => ({ owner: 'akholod', repo: 'easy-cast', repositoryId: 1336107651 }),
       now: () => '2026-08-16T00:00:00Z',
       tmpPaths: () => options.tmp ?? [],
       ffmpegAvailable: () => true,
@@ -425,9 +426,11 @@ describe('advisories', () => {
   // loops on re-uploads — each one permanent.
   it('warns that the URL stays 404 until something quotes it, once a comment exists', async () => {
     const output = await run([file('a.png', 'aaa')]);
-    expect(output.notes?.join(' ')).toMatch(/404 until something quotes it/);
-    // Hedged, because stage 0 has not run and this was observed only once.
-    expect(output.notes?.join(' ')).toMatch(/not yet established/);
+    // Established by stage 0: the canonical URL answers 404 to a direct GET in
+    // every case, cited or not. The image is served through a signed URL that
+    // GitHub substitutes at render time.
+    expect(output.notes?.join(' ')).toMatch(/answers 404 if you fetch it directly/);
+    expect(output.notes?.join(' ')).toMatch(/Do not re-upload/);
   });
 
   it('says nothing of the sort when no comment was written', async () => {

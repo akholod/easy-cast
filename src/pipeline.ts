@@ -36,7 +36,7 @@ import {
 import { computePlanToken, verifyPlanToken, type PlanFingerprint, type PlanScope } from './plan-token.js';
 import { renderBatch } from './render.js';
 import type { ResolvedTarget } from './target/resolve.js';
-import type { UploadPort } from './upload/port.js';
+import type { UploadPort, UploadTarget } from './upload/port.js';
 
 export interface PipelineRequest {
   readonly command: 'attach';
@@ -61,6 +61,11 @@ export interface PipelineDeps {
   readonly convert: (snapshot: SourceSnapshot, noConvert: boolean) => Promise<ConversionResult>;
   readonly resolveUploadToken: () => Promise<{ token: string; login: string }>;
   readonly assertIdentity: (uploadLogin: string, commentLogin: string) => void;
+  /**
+   * Fetched here rather than carried in ResolvedTarget: repository_id is a wire
+   * parameter of the upload endpoint, and P5 keeps those inside src/upload/.
+   */
+  readonly uploadTarget: () => Promise<UploadTarget>;
   readonly now: () => string;
   readonly tmpPaths: () => readonly string[];
   readonly ffmpegAvailable: () => boolean;
@@ -223,6 +228,7 @@ export async function runAttach(
 
     const digests = prepared.map((file, index) => computeDigest(file.snapshot, converted[index].effectiveProfileId));
 
+    const wireTarget = await deps.uploadTarget();
     const { token, login: uploadLogin } = await deps.resolveUploadToken();
     deps.assertIdentity(uploadLogin, await deps.api.getViewerLogin());
 
@@ -262,7 +268,7 @@ export async function runAttach(
         converted[index].converted
           ? { fileName: asMp4(file.name), contentType: 'video/mp4', category: file.category, bytes }
           : { fileName: file.name, contentType: file.contentType, category: file.category, bytes },
-        { owner: target.owner, repo: target.repo },
+        wireTarget,
         token,
       );
 
