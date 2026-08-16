@@ -1,0 +1,56 @@
+{
+  "name": "easy-cast",
+  "version": "0.1.0",
+  "description": "Attach visual evidence — screenshots and video — to a GitHub issue or pull request from the command line",
+  "type": "module",
+  "license": "MIT",
+  "author": "Andrey Kokhanevich <andrey.kokhanevich@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/akholod/easy-cast.git"
+  },
+  "homepage": "https://github.com/akholod/easy-cast",
+  "bugs": {
+    "url": "https://github.com/akholod/easy-cast/issues"
+  },
+  "keywords": [
+    "github",
+    "screenshot",
+    "video",
+    "pull-request",
+    "developer-tools",
+    "cli",
+    "visual-regression",
+    "playwright"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "packageManager": "pnpm@11.13.1",
+  "bin": {
+    "easy-cast": "dist/src/cli.js",
+    "ecast": "dist/src/cli.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "prepack": "pnpm clean && pnpm build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint ."
+  },
+  "files": [
+    "dist/src",
+    "README.md",
+    "LICENSE"
+  ],
+  "devDependencies": {
+    "@types/node": "26.1.2",
+    "eslint": "10.8.0",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}

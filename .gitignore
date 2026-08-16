@@ -1,0 +1,8 @@
+node_modules/
+dist/
+coverage/
+/.omc/
+.easy-cast/tmp/
+
+# Ralph session working notes, not project content
+progress.txt

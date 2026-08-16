@@ -1,0 +1,4 @@
+# The write-ahead journal is append-only. Union merge keeps records from both
+# sides of a merge instead of producing a conflict — losing a record would mean
+# losing the only local trace of an irreversible upload.
+.easy-cast/journal.jsonl merge=union
