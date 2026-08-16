@@ -47,18 +47,3 @@ export interface UploadPort {
   upload(item: UploadItem, target: UploadTarget, token: string): Promise<UploadOutcome>;
 }
 
-/**
- * Stands in until stage 0 lands. Every answer is "state unknown, do not retry",
- * which is the honest default for an endpoint whose behaviour is not established
- * — and it means nothing built on top can accidentally depend on a guess.
- */
-export const stubUploadPort: UploadPort = {
-  upload: async () => ({
-    ok: false,
-    code: 5,
-    reason: 'endpoint_unavailable',
-    state: 'unknown',
-    retryable: false,
-    message: 'the upload protocol is not established yet (stage 0 pending)',
-  }),
-};

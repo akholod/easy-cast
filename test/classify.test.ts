@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { classifyUploadResponse } from '../src/upload/classify.js';
+import {
+  classifyUploadResponse,
+  CLASSIFICATION_PROVENANCE,
+  CLASSIFICATION_VERSION,
+} from '../src/upload/classify.js';
 import { buildUploadRequest, UPLOAD_ORIGIN } from '../src/upload/wire.js';
 import { createUploadPort } from '../src/upload/upload.js';
 import type { Transport } from '../src/upload/transport.js';
@@ -194,7 +198,13 @@ describe('transport failures carry the right retry advice', () => {
 describe('the curated table stays in step with the code', () => {
   const table = JSON.parse(
     readFileSync(resolve(import.meta.dirname, '../fixtures/endpoint/classification.json'), 'utf8'),
-  ) as { rows: { status: number; outcome: string }[]; default: { outcome: string }; wire: { phases: number } };
+  ) as {
+    version: number;
+    provenance: { run: string };
+    rows: { status: number; outcome: string }[];
+    default: { outcome: string };
+    wire: { phases: number };
+  };
 
   it('classifies every status the table records the way the table says', () => {
     for (const row of table.rows) {
@@ -211,5 +221,14 @@ describe('the curated table stays in step with the code', () => {
 
   it('agrees on the default', () => {
     expect(table.default.outcome).toBe('endpoint_unavailable');
+  });
+
+  // Ties the code to the evidence it was derived from. If the fixture is
+  // regenerated from a later probe without the classifier being revisited, this
+  // is what notices.
+  it('was derived from the same probe run the fixture records', () => {
+    expect(table.version).toBe(CLASSIFICATION_VERSION);
+    expect(CLASSIFICATION_PROVENANCE).toContain('2026-08-16');
+    expect(table.provenance.run).toContain('2026-08-16');
   });
 });
