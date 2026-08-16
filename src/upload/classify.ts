@@ -77,8 +77,13 @@ export function classifyUploadResponse(
   return unavailable(status, body);
 }
 
-/** The shape stage 0 recorded: `https://github.com/user-attachments/assets/<uuid>`. */
-const ASSET_URL = /^https:\/\/github\.com\/user-attachments\/assets\/[0-9a-f-]{8,}$/i;
+/**
+ * The exact shape stage 0 recorded, down to the UUID layout. A looser pattern let
+ * `assets/--------` through as a success, which would mean reporting an upload we
+ * could never find again.
+ */
+const ASSET_URL =
+  /^https:\/\/github\.com\/user-attachments\/assets\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function extractUrl(body: string): string | undefined {
   try {
@@ -89,17 +94,26 @@ function extractUrl(body: string): string | undefined {
   }
 }
 
-const looksLikeNotFound = (body: string): boolean => readMessage(body)?.includes('Not Found') === true;
+/** Exactly the body stage 0 recorded, not merely one that mentions the phrase. */
+const looksLikeNotFound = (body: string): boolean => readMessage(body) === 'Not Found';
 
 /**
- * A rejection names what it refused, either in `errors[]` or in `message`. A 4xx
- * with neither is not a shape this tool has seen.
+ * The recorded rejection shape, and only that.
+ *
+ * Accepting any non-empty `message` was too generous: a `422 {"message":"Rate
+ * limited"}` would have been reported as "the endpoint refused this file", sending
+ * the caller to fix a file that was never the problem. A 422 that does not look
+ * like the validation failure stage 0 saw is an unknown.
  */
+const REJECTION_FIELDS = new Set(['content_type', 'name', 'size']);
+
 function looksLikeRejection(body: string): boolean {
   try {
     const parsed = JSON.parse(body) as { message?: unknown; errors?: unknown };
-    if (Array.isArray(parsed.errors) && parsed.errors.length > 0) return true;
-    return typeof parsed.message === 'string' && parsed.message !== '';
+    if (!Array.isArray(parsed.errors) || parsed.errors.length === 0) return false;
+    return (parsed.errors as Rejection[]).some(
+      (error) => typeof error?.field === 'string' && REJECTION_FIELDS.has(error.field),
+    );
   } catch {
     return false;
   }

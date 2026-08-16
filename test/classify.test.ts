@@ -85,6 +85,10 @@ describe('anything not observed', () => {
     ['a body with no url', '{"ok":true}'],
     ['a url of an unexpected shape', '{"url":"https://example.invalid/somewhere/else"}'],
     ['an empty url', '{"url":""}'],
+    // A looser pattern accepted this, which would mean reporting an upload we
+    // could never find again.
+    ['a url whose id is not a uuid', '{"url":"https://github.com/user-attachments/assets/--------"}'],
+    ['a url with a truncated uuid', '{"url":"https://github.com/user-attachments/assets/deadbeef"}'],
   ])('refuses to call a 201 successful given %s', (_label, body) => {
     expect(classifyUploadResponse(201, NO_HEADERS, body)).toMatchObject({
       reason: 'endpoint_unavailable',
@@ -93,12 +97,17 @@ describe('anything not observed', () => {
   });
 
   // A familiar status carrying an unfamiliar body means the endpoint changed under
-  // us, which is exactly the case that must not be reported confidently.
+  // us, which is exactly the case that must not be reported confidently. A 422
+  // saying "Rate limited" would otherwise be reported as "the endpoint refused
+  // this file", sending the caller to fix a file that was never the problem.
   it.each([
     [404, '<html>something else entirely</html>'],
     [404, '{"message":"Rate limited"}'],
+    [404, '{"message":"Not Found somewhere in a longer sentence"}'],
     [422, '{"nothing":"recognisable"}'],
     [422, 'not json'],
+    [422, '{"message":"Rate limited"}'],
+    [422, '{"message":"Validation Failed","errors":[{"field":"something_else"}]}'],
   ])('treats %i with an unrecognised body as unknown, not as a known failure', (status, body) => {
     expect(classifyUploadResponse(status, NO_HEADERS, body)).toMatchObject({
       reason: 'endpoint_unavailable',

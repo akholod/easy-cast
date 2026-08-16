@@ -55,6 +55,18 @@ describe('scrubbing a whole record', () => {
     expect(scrubbed.httpStatus).toBe(201);
   });
 
+  // The leak that reached a committed fixture: the key and its value are separate
+  // strings by the time a per-value walk sees them, so a key+value pattern never
+  // matched. Redaction by position is what actually catches these.
+  it.each([
+    ['a header key', { responseHeaders: { 'x-github-request-id': 'C4E2:1F3A:9BD0' } }],
+    ['a snake_case body field', { responseBody: { request_id: 'C4E2:1F3A:9BD0' } }],
+    ['an authorization header', { responseHeaders: { authorization: 'Bearer whatever' } }],
+    ['a set-cookie header', { responseHeaders: { 'set-cookie': 'session=abc123' } }],
+  ])('redacts %s by position, whatever the value looks like', (_label, record) => {
+    expect(JSON.stringify(scrubObservation(record))).not.toMatch(/C4E2|whatever|abc123/);
+  });
+
   it('serialises one scrubbed line, so there is no unscrubbed path to the file', () => {
     const line = serializeObservation({ note: TOKEN });
     expect(line.endsWith('\n')).toBe(true);

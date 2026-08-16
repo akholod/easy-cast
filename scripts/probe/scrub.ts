@@ -24,6 +24,10 @@ const SENSITIVE_KEYS = new Set([
   'x-github-request-id',
   'x-github-delivery',
   'x-request-id',
+  // GitHub's JSON error bodies carry it in snake_case, as a field rather than a
+  // header — the same value, a different position.
+  'request_id',
+  'requestid',
   'etag',
 ]);
 
