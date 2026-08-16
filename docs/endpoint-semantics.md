@@ -28,8 +28,11 @@ allowed for (`policy → POST elsewhere`) does not occur. `wire.ts` therefore ca
 `repository_id` is **required**: omitting it answers 404. It is the numeric
 `id` from `repos/{owner}/{repo}`, not the `node_id`.
 
-A request with no body answers `400 Invalid Content-Type`, so the `Content-Type`
-header — not a query parameter — is what declares the type.
+The `Content-Type` header — not a query parameter — is what declares the type. A
+request sent without one was refused with `400 Invalid Content-Type` during
+exploratory work, but that exchange predates the observation log, so 400 is
+deliberately **not** a row in the table: it falls to the default and is reported as
+`endpoint_unavailable` until it has been recorded properly.
 
 ## The responses
 
@@ -37,8 +40,7 @@ header — not a query parameter — is what declares the type.
 | --- | --- | --- | --- |
 | 201 | `{"url": …}` | success | a real `.png` and a real `.gif` |
 | 404 | `Not Found` | **no access, or not found — indistinguishable** | wrong `repository_id`; a repository we can read but not push to (`cli/cli`); `repository_id` omitted entirely |
-| 422 | `content_type is not included in the list of allowed content types` and/or `name has a file extension that does not match the content type` | the type or the name was refused | `.log` as `text/plain` gave the first alone; `.png` as `application/octet-stream` gave **both at once** |
-| 400 | `Invalid Content-Type` | no declared type | a request sent with no body |
+| 422 | `content_type is not included in the list of allowed content types` **and** `name has a file extension that does not match the content type` | the type or the name was refused | both recorded cases carried **both messages at once**: `.png` as `application/octet-stream`, and `.log` as `text/plain` |
 | anything else | — | `endpoint_unavailable` | nothing — this is the deliberate default |
 
 Two consequences the code depends on:
@@ -101,6 +103,7 @@ These are genuinely open, not overlooked:
   is deliberately never read.
 - **A classic PAT without the `repo` scope.** That credential has to be issued by
   hand through the web UI.
+- **A 400 with no declared type.** Seen before recording began, never captured.
 - **Video types and the size ceiling.** Each success would have cost another
   permanent attachment. The image cases already establish the accept/reject shape,
   and `mime-table.ts` remains a table of hypotheses for the types not probed.

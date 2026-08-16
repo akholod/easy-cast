@@ -246,6 +246,31 @@ describe('pre-flight refusals leave nothing behind', () => {
     expect(trace).not.toContain('upload');
   });
 
+  // The gap US-020 made reachable: estimating from the new files alone let an
+  // over-large update be discovered by GitHub only after the uploads had happened,
+  // and those cannot be taken back.
+  it('counts what the comment already carries, and uploads nothing when the total will not fit', async () => {
+    const a = file('big.png', 'aaa');
+    const key = defaultKey('attach', [computeSourceHash(captureSource(a))]);
+    const packed = Array.from({ length: 64 }, (_, i) => [`d${i}`, `${'u'.repeat(1200)}${i}`] as const);
+    const h = harness({
+      comments: [
+        {
+          id: 5,
+          url: 'https://example.invalid/c/5',
+          body: `${marker(key)}\n\n${serializeLedger([...packed])}`,
+          createdAt: '2026-08-16T00:00:00Z',
+          authorLogin: 'akholod',
+        },
+      ],
+    });
+
+    await expect(runAttach(request([a], { confirmPlan: tokenFor([a]) }), h.deps)).rejects.toMatchObject({
+      reason: 'body_budget_exceeded',
+    });
+    expect(h.uploadCount()).toBe(0);
+  });
+
   it('refuses a batch too large for the ledger before uploading any of it', async () => {
     const h = harness();
     const files = Array.from({ length: 65 }, (_, i) => file(`f${i}.png`, `content-${i}`));

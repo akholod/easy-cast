@@ -29,11 +29,19 @@ export function classifyUploadResponse(
 ): UploadOutcome {
   if (status === 201) {
     const url = extractUrl(body);
-    if (url) return { ok: true, url };
     // A 201 whose body we cannot read is not a success we can act on: we would
-    // have created an attachment and lost its only identifier.
-    return unavailable(status, body, 'the endpoint answered 201 but no url could be read from the body');
+    // have created an attachment and lost its only identifier. The URL must also
+    // look like the one the endpoint actually returns — accepting any string
+    // would let a changed response shape through as a success.
+    if (url) return { ok: true, url };
+    return unavailable(status, body, 'the endpoint answered 201 but no usable url could be read from the body');
   }
+
+  // Status alone is not enough. The table was built from bodies as well as codes,
+  // and a familiar code carrying an unfamiliar body means the endpoint has changed
+  // under us — which is exactly the case that must not be reported confidently.
+  if (status === 404 && !looksLikeNotFound(body)) return unavailable(status, body);
+  if (status === 422 && !looksLikeRejection(body)) return unavailable(status, body);
 
   if (status === 404) {
     // Three unrelated causes produce a byte-identical response: a wrong
@@ -52,7 +60,10 @@ export function classifyUploadResponse(
     };
   }
 
-  if (status === 422 || status === 400) {
+  // 422 only. A 400 was seen during exploratory work but never recorded, so it is
+  // not a row in the table and falls to the default — asserting a classification
+  // no observation supports is the habit stage 0 existed to break.
+  if (status === 422) {
     return {
       ok: false,
       code: 1,
@@ -66,10 +77,38 @@ export function classifyUploadResponse(
   return unavailable(status, body);
 }
 
+/** The shape stage 0 recorded: `https://github.com/user-attachments/assets/<uuid>`. */
+const ASSET_URL = /^https:\/\/github\.com\/user-attachments\/assets\/[0-9a-f-]{8,}$/i;
+
 function extractUrl(body: string): string | undefined {
   try {
     const parsed = JSON.parse(body) as { url?: unknown };
-    return typeof parsed.url === 'string' && parsed.url !== '' ? parsed.url : undefined;
+    return typeof parsed.url === 'string' && ASSET_URL.test(parsed.url) ? parsed.url : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+const looksLikeNotFound = (body: string): boolean => readMessage(body)?.includes('Not Found') === true;
+
+/**
+ * A rejection names what it refused, either in `errors[]` or in `message`. A 4xx
+ * with neither is not a shape this tool has seen.
+ */
+function looksLikeRejection(body: string): boolean {
+  try {
+    const parsed = JSON.parse(body) as { message?: unknown; errors?: unknown };
+    if (Array.isArray(parsed.errors) && parsed.errors.length > 0) return true;
+    return typeof parsed.message === 'string' && parsed.message !== '';
+  } catch {
+    return false;
+  }
+}
+
+function readMessage(body: string): string | undefined {
+  try {
+    const parsed = JSON.parse(body) as { message?: unknown };
+    return typeof parsed.message === 'string' ? parsed.message : undefined;
   } catch {
     return undefined;
   }

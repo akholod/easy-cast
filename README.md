@@ -29,9 +29,8 @@ semantics — **has run**. What it found is in
 | `--dry-run` | works, and is meaningful: it produces a real plan and a real `--confirm-plan` token |
 
 Still not released, and [docs/release-readiness.md](docs/release-readiness.md) says what is
-outstanding. In short: `upload` is unwired, the pre-upload size budget does not yet account for an
-existing comment, and video types, the size ceiling, installation tokens and abuse detection remain
-unprobed — each for a stated reason rather than by oversight.
+outstanding. In short: `upload` is unwired, and video types, the size ceiling, installation tokens
+and abuse detection remain unprobed — each for a stated reason rather than by oversight.
 
 ---
 
@@ -39,7 +38,8 @@ unprobed — each for a stated reason rather than by oversight.
 
 An uploaded attachment **cannot be deleted — ever**. Removing the markdown from a comment does not
 remove the asset. Editing the comment does not. Deleting the comment does not. Closing the issue does
-not. The asset stays reachable at its own URL.
+not. The bytes stay on GitHub's storage, and anyone who can read a comment quoting the asset can
+still fetch them.
 
 Every design decision in this tool follows from that one fact:
 
@@ -199,38 +199,47 @@ Stated in full, because each line is a way this tool can cost you something irre
 - **behaviour when several of the tool's own comments carry the same marker:** the oldest is
   rewritten, the rest stay visible with stale URLs, and their ledgers are not read — on another
   machine that costs one irreversible re-upload;
-- **the journal is bound to the directory the command ran in.** `.gitignore` excludes only
-  `.easy-cast/tmp/`, so `journal.jsonl` **can be committed, and then travels with the repository**
-  (which is why `.gitattributes` sets `merge=union` on it). If it is not committed, then another
-  machine, CI, a run from a different directory, or `rm -rf .easy-cast` all mean no deduplication —
-  and, on a repeat, irreversible duplicates. Whether to commit the journal is your decision, and the
-  skill is required to name it;
+- **the journal is bound to the directory the command ran in.** It can be committed, and then
+  travels with the repository (which is why `.gitattributes` sets `merge=union` on it) — but **only
+  commit it to a private repository.** Stage 0 established that an attachment URL is a capability:
+  anyone who can read a comment quoting it gets a working signed link to the bytes. A journal in a
+  public repository therefore publishes every asset it lists, which is why this repository ignores
+  its own. If it is not committed, then another machine, CI, a run from a different directory, or
+  `rm -rf .easy-cast` all mean no deduplication — and, on a repeat, irreversible duplicates;
 - **atomicity of `O_APPEND` on network filesystems** (NFS, a networked `$HOME`) is not guaranteed —
   the test is green on a local filesystem only;
 - **switching `--no-convert` on and off** costs one irreversible upload;
 - **eviction from a comment's ledger past 64 distinct files** costs one irreversible upload (on the
   same machine this is softened by the local write-ahead journal);
-- **the correctness of every interpretation of the endpoint until Stage 0 completes.**
+- **the correctness of any endpoint behaviour Stage 0 did not measure** — the open items are listed
+  in [docs/endpoint-semantics.md](docs/endpoint-semantics.md) rather than left implicit.
 
-One open question is worth naming separately, because it decides whether a safety gate means
-anything: whether an asset uploaded against a **private** repository stays unreachable once its URL
-is quoted somewhere public **has not been established**. That is DG4, and Stage 0's "nature of the
-asset" case settles it. Until then, a private target is not evidence of privacy, and the worth of
-`--allow-public` is itself unknown. Treat every uploaded frame as readable by a stranger.
+One point is worth naming separately, because Stage 0 answered it and the answer is not the
+reassuring one. **A private repository does not protect the file.** The URL this tool prints never
+serves the image to anyone; GitHub substitutes a short-lived signed URL when it *renders* the
+comment, and that signed URL needs no credentials at all. An asset uploaded against the private probe
+repository and quoted in a public issue was fetched anonymously during the probe.
+
+So access follows **who can read the comment**, not which repository the file was uploaded against.
+`--allow-public` still protects `attach`, but only because `attach` posts into the same repository it
+uploaded against, so the two audiences coincide — see
+[ADR 022](docs/decisions/022-allow-public-gate-after-stage-0.md). A URL that leaves a private comment
+for a public one is public from that moment. Treat every uploaded frame as readable by a stranger.
 
 ---
 
 ## Design decisions
 
 The reasoning behind each of the above lives in [docs/decisions/](docs/decisions/) — records 003 to
-021, one per decision, with the alternatives that were considered and what each choice costs. The
+022, one per decision, with the alternatives that were considered and what each choice costs. The
 index is
 [docs/decisions/README.md](docs/decisions/README.md). Rather than restating them here: start with
 [003](docs/decisions/003-request-shape-is-a-stage-0-question.md) for why the endpoint is quarantined,
 [010](docs/decisions/010-confirm-plan-binds-a-run-to-a-plan.md) for the plan handshake,
 [011](docs/decisions/011-local-event-sourced-wal-with-scoped-dedup.md) and
 [017](docs/decisions/017-repair-step-not-a-guard.md) for deduplication and repair, and
-[021](docs/decisions/021-decision-gate-outcome.md) for the open DG4 question above.
+[022](docs/decisions/022-allow-public-gate-after-stage-0.md) for what Stage 0 changed about the
+public-repository gate.
 
 Two further documents: [docs/skill-derived-requirements.md](docs/skill-derived-requirements.md)
 records the requirements the skill imposed on the CLI surface and how each was closed or rejected,

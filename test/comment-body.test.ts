@@ -173,7 +173,7 @@ describe('size budget', () => {
         marker: marker(key),
         caption,
         files,
-        ledgerEntryCount: entries.length,
+        carriedLedgerBytes: Buffer.byteLength(serializeLedger(entries)),
       });
 
       expect(estimate).toBeGreaterThanOrEqual(Buffer.byteLength(actual));
@@ -185,21 +185,24 @@ describe('size budget', () => {
   });
 
   it('grows with the number of attachments and with the ledger', () => {
-    const base = { marker: marker('k'), files: [], ledgerEntryCount: 0 };
+    const base = { marker: marker('k'), files: [], carriedLedgerBytes: 0 };
     const withFile = estimateBodyBytes({
       ...base,
       files: [{ name: 'a.png', category: 'image' as const }],
     });
     expect(withFile).toBeGreaterThan(estimateBodyBytes(base));
-    expect(estimateBodyBytes({ ...base, ledgerEntryCount: 10 })).toBeGreaterThan(
+    expect(estimateBodyBytes({ ...base, carriedLedgerBytes: 2000 })).toBeGreaterThan(
       estimateBodyBytes(base),
     );
   });
 
-  it('stops growing past the ledger cap, because the ledger itself does', () => {
-    const base = { marker: marker('k'), files: [] };
-    expect(estimateBodyBytes({ ...base, ledgerEntryCount: 200 })).toBe(
-      estimateBodyBytes({ ...base, ledgerEntryCount: 64 }),
-    );
+  // Measured rather than modelled: an entry already in the comment can be far
+  // longer than the per-entry reserve, and under-counting it would miss exactly
+  // the comment most at risk of overflowing.
+  it('counts what the comment already carries at its real size', () => {
+    const base = { marker: marker('k'), files: [], carriedLedgerBytes: 0 };
+    const long = estimateBodyBytes({ ...base, carriedLedgerBytes: 50_000 });
+    expect(long).toBeGreaterThanOrEqual(50_000);
+    expect(long).toBeGreaterThan(estimateBodyBytes({ ...base, carriedLedgerBytes: 100 }));
   });
 });

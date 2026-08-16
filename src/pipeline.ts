@@ -181,16 +181,28 @@ export async function runAttach(
       );
     }
 
+    // The existing comment is read HERE, before any upload, because the body we
+    // will end up writing includes whatever ledger it already carries. Estimating
+    // from the new files alone let an over-large update be discovered by GitHub
+    // only after the irreversible uploads had happened.
+    const login = await deps.api.getViewerLogin();
+    const existingBefore = await findOwnComment(
+      deps.api, target.owner, target.repo, target.number, key, login,
+    );
+    const carried = parseLedger(existingBefore.chosen?.body ?? '').entries;
+    const carriedLedgerBytes = Buffer.byteLength(serializeLedger(carried));
+
     const estimated = estimateBodyBytes({
       marker: marker(key),
       caption: request.caption,
       files: prepared.map((file) => ({ name: file.name, category: file.category })),
-      ledgerEntryCount: prepared.length,
+      carriedLedgerBytes,
     });
     if (estimated > BODY_BUDGET_BYTES) {
       throw bodyBudgetExceeded(
-        `the comment would be about ${estimated} bytes, over the ${BODY_BUDGET_BYTES} budget. ` +
-          'Use fewer files or a shorter caption. Nothing was uploaded.',
+        `the comment would be about ${estimated} bytes, over the ${BODY_BUDGET_BYTES} budget ` +
+          `(${prepared.length} new file(s) plus ${carried.length} already recorded). ` +
+          'Use fewer files, a shorter caption, or a fresh --key. Nothing was uploaded.',
       );
     }
 
@@ -230,13 +242,14 @@ export async function runAttach(
 
     const wireTarget = await deps.uploadTarget();
     const { token, login: uploadLogin } = await deps.resolveUploadToken();
-    deps.assertIdentity(uploadLogin, await deps.api.getViewerLogin());
+    deps.assertIdentity(uploadLogin, login);
 
     // ---- Repair, the first step that writes anything (D17). ----
     const runScope = scopeOf(target, key);
     const repaired = await repair(runScope, deps, uploadLogin, anomalies);
 
     // ---- Uploads. ----
+    // Re-read: the repair step above may have written to this very comment.
     const existing = await findOwnComment(deps.api, target.owner, target.repo, target.number, key, uploadLogin);
     anomalies.push(...existing.anomalies);
     const ledgerRead = parseLedger(existing.chosen?.body ?? '');

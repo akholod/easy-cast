@@ -3,12 +3,15 @@ import { nextRunNumber } from './run.js';
 import { checkInterlock } from './interlock.js';
 
 /**
- * The case that decides DG4.
+ * The case that decides DG4: does uploading against a PRIVATE repository protect
+ * an asset once its URL is quoted in a PUBLIC issue?
  *
- * If an asset uploaded against a PRIVATE repository becomes anonymously reachable
- * once its URL is quoted in a PUBLIC issue, then the `--allow-public` gate is
- * theatre: it blocks the safe direction and lets the dangerous one through. If it
- * stays unreachable, the gate is meaningful and stays.
+ * The test that matters is on the **rendered** URL, not the canonical one. The
+ * canonical `user-attachments/assets/<uuid>` URL answers 404 to everyone, always;
+ * an earlier version of this script concluded from that number that the asset was
+ * protected, and was wrong. What a reader's browser actually loads is the
+ * short-lived signed URL GitHub substitutes when it renders the comment, so that
+ * is what gets fetched here without credentials.
  *
  * Kept in one process on purpose. The asset UUID is scrubbed out of the
  * observation log — correctly, since that log is published — so the URL must never
@@ -53,8 +56,11 @@ async function main(): Promise<number> {
   const url = (JSON.parse(uploaded.body) as { url: string }).url;
   say(`  uploaded against the private repo (url held in-process only)`);
 
+  // Recorded for completeness only. The canonical URL answers 404 to everyone in
+  // every case, so on its own it settles nothing — an earlier version of this
+  // script concluded DG4 from exactly this number and was wrong.
   const beforePublic = await fetchAnonymous(url);
-  say(`  anonymous GET before any public citation -> ${beforePublic.status}`);
+  say(`  anonymous GET of the canonical URL (always 404, proves nothing) -> ${beforePublic.status}`);
 
   const issue = await gh(
     ['api', `repos/${PUBLIC_REPO}/issues`, '--method', 'POST', '--input', '-'],
@@ -73,8 +79,26 @@ async function main(): Promise<number> {
   // Give GitHub a moment to process the reference before concluding anything.
   await new Promise((r) => setTimeout(r, 5000));
 
-  const afterPublic = await fetchAnonymous(url);
-  say(`  anonymous GET after PUBLIC citation -> ${afterPublic.status}`);
+  // The question is what a READER can fetch, and a reader never touches the
+  // canonical URL — the browser loads the signed URL GitHub substitutes when it
+  // renders the comment. That rewrite is the only thing worth testing here.
+  const rendered = await gh([
+    'api', `repos/${PUBLIC_REPO}/issues/${number}`,
+    '-H', 'Accept: application/vnd.github.html+json', '--jq', '.body_html',
+  ]);
+  const signed = /<img src="([^"]+)"/.exec(rendered.out)?.[1]?.replace(/&amp;/g, '&');
+  if (!signed) {
+    say('  could not read the rendered image URL; DG4 is not answered by this run.');
+    save(
+      observe(run, 'public.asset-nature', 'public-block',
+        'Is an asset uploaded against a PRIVATE repository reachable anonymously once quoted in a PUBLIC issue?',
+        'not-testable', { note: 'body_html carried no <img>; the rewrite could not be inspected.' }),
+    );
+    return 1;
+  }
+
+  const afterPublic = await fetchAnonymous(signed);
+  say(`  anonymous GET of the RENDERED signed URL -> ${afterPublic.status}`);
 
   const reachable = afterPublic.status === 200 || afterPublic.status === 302;
   save(
@@ -84,17 +108,18 @@ async function main(): Promise<number> {
       {
         httpStatus: afterPublic.status ?? undefined,
         note:
-          `before public citation: ${beforePublic.status}; after: ${afterPublic.status}. ` +
+          `canonical URL before public citation: ${beforePublic.status} (always 404, proves nothing). ` +
+          `RENDERED signed URL after public citation, fetched with no credentials: ${afterPublic.status}. ` +
           (reachable
-            ? 'REACHABLE — the asset is account-scoped, not repository-scoped, so the --allow-public gate does not protect what it claims to.'
-            : 'NOT reachable — visibility follows the repository the asset was uploaded against, so the --allow-public gate is meaningful.'),
+            ? 'REACHABLE — access follows who can read the COMMENT, not the repository the asset was uploaded against. The gate protects only because attach quotes where it uploads.'
+            : 'NOT reachable — visibility follows the repository the asset was uploaded against.'),
       }),
   );
 
   say('');
   say(reachable
-    ? 'DG4: the gate is theatre — a private-repo asset became public by being quoted.'
-    : 'DG4: the gate is meaningful — the asset stayed unreachable despite a public citation.');
+    ? 'DG4: a private-repo asset became readable by anyone once quoted publicly.'
+    : 'DG4: the asset stayed unreachable despite a public citation.');
   say(`probe issue left for cleanup: ${PUBLIC_REPO}#${number}`);
   return 0;
 }

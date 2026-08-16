@@ -74,7 +74,13 @@ export function estimateBodyBytes(parts: {
   marker: string;
   caption?: string;
   files: readonly { name: string; category: MediaCategory }[];
-  ledgerEntryCount: number;
+  /**
+   * Measured, not modelled. Whatever the comment already carries is a known
+   * quantity, and an entry there can be far longer than the per-entry reserve —
+   * estimating it would under-count exactly the comment most at risk of
+   * overflowing.
+   */
+  carriedLedgerBytes: number;
 }): number {
   let total = Buffer.byteLength(parts.marker) + 4;
   if (parts.caption) total += Buffer.byteLength(escapeMarkdownLabel(parts.caption)) + 2;
@@ -87,8 +93,10 @@ export function estimateBodyBytes(parts: {
       2;
   }
 
-  const entries = Math.min(parts.ledgerEntryCount, LEDGER_CAP);
-  total += 64 + entries * (DIGEST_BYTES + URL_RESERVE_BYTES + LEDGER_ENTRY_OVERHEAD);
+  // The ledger we will write: what is already there, plus a reserve for each new
+  // entry whose URL does not exist yet.
+  const newEntries = Math.min(parts.files.length, LEDGER_CAP);
+  total += 64 + parts.carriedLedgerBytes + newEntries * (DIGEST_BYTES + URL_RESERVE_BYTES + LEDGER_ENTRY_OVERHEAD);
 
   return total;
 }

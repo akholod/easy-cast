@@ -1,38 +1,62 @@
-import { mapStringsDeep, redact } from '../../src/secret/redact.js';
+import { redact } from '../../src/secret/redact.js';
 
 /**
  * Everything written to `fixtures/endpoint/observations.jsonl` goes through here.
  *
  * This package is published publicly, so those fixtures reach the npm tarball and
- * GitHub. A secret recorded in an observation is a secret published, and unlike an
- * attachment it would at least be removable — but only after it had been fetched
- * by anyone who cared to look.
+ * GitHub. A secret recorded in an observation is a secret published.
  *
- * This is a wrapper over `redact()`, never a second redactor. One implementation
- * that everything funnels through is the only version of this that stays correct;
- * two would drift, and the copy nobody remembered would be the one that leaked.
+ * Scrubbing is **structural**, by key, not only by pattern over each string. An
+ * earlier version walked the record value by value and applied a regex that
+ * expected `key: value` together — which meant it never matched anything, because
+ * by then the key and the value were separate strings. Request ids sat in the
+ * committed fixture as a result. Anything sensitive because of *where it sits*
+ * has to be redacted by its position, not by what it looks like.
  */
 
 const ASSET_UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
-const REQUEST_ID = /("?x-github-request-id"?\s*[:=]\s*"?)([^",\s}]+)/gi;
-const DELIVERY_ID = /("?x-github-delivery"?\s*[:=]\s*"?)([^",\s}]+)/gi;
+
+/** Redacted wherever they appear as a key, whatever the value looks like. */
+const SENSITIVE_KEYS = new Set([
+  'authorization',
+  'set-cookie',
+  'cookie',
+  'x-github-request-id',
+  'x-github-delivery',
+  'x-request-id',
+  'etag',
+]);
 
 export const REDACTED = '[redacted]';
 
 /**
- * A request id is not a credential, but it ties an observation to a specific
- * account's traffic — and these files are meant to describe an endpoint, not to
- * publish a log of who called it.
+ * A request id can also appear inside a response body, where it is a value in
+ * free text rather than a key in the record. The structural pass above cannot see
+ * that one, so both rules exist: by key for headers, by pattern for prose.
  */
+const REQUEST_ID_IN_TEXT = /("?(?:x-github-)?request[_-]?id"?\s*[:=]\s*"?)([^",\s}]+)/gi;
+
+/** Pattern-based rules, applied to every string wherever it sits. */
 export function scrubText(text: string): string {
-  return redact(text)
-    .replace(REQUEST_ID, `$1${REDACTED}`)
-    .replace(DELIVERY_ID, `$1${REDACTED}`)
-    .replace(ASSET_UUID, REDACTED);
+  return redact(text).replace(REQUEST_ID_IN_TEXT, `$1${REDACTED}`).replace(ASSET_UUID, REDACTED);
 }
 
-/** Applied to every string anywhere in the record, at any depth. */
-export const scrubObservation = <T>(record: T): T => mapStringsDeep(record, scrubText);
+export function scrubObservation<T>(record: T): T {
+  return walk(record) as T;
+}
+
+function walk(value: unknown): unknown {
+  if (typeof value === 'string') return scrubText(value);
+  if (Array.isArray(value)) return value.map(walk);
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, inner]) =>
+        SENSITIVE_KEYS.has(key.toLowerCase()) ? [key, REDACTED] : [key, walk(inner)],
+      ),
+    );
+  }
+  return value;
+}
 
 /** The serialised form, so no caller can reach the file without passing through here. */
 export const serializeObservation = (record: unknown): string =>

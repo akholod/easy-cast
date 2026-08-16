@@ -19,10 +19,11 @@ const BOTH_REASONS =
   '{"message":"Validation Failed","errors":[' +
   '{"resource":"UserAsset","code":"custom","field":"content_type","message":"content_type is not included in the list of allowed content types"},' +
   '{"resource":"UserAsset","code":"custom","field":"name","message":"name has a file extension that does not match the content type: .png != application/octet-stream"}]}';
+// Never actually observed with one reason alone — both recorded 422s carried two.
+// Kept to prove the message adapts, not as a claim that GitHub sends this.
 const ONE_REASON =
   '{"message":"Validation Failed","errors":[{"resource":"UserAsset","code":"custom","field":"content_type",' +
   '"message":"content_type is not included in the list of allowed content types"}]}';
-const NO_CONTENT_TYPE = '{"message":"Invalid Content-Type\'"}';
 
 describe('the responses stage 0 actually saw', () => {
   it('reads the url out of a 201', () => {
@@ -52,18 +53,11 @@ describe('the responses stage 0 actually saw', () => {
     expect(outcome.message).toContain('does not match the content type');
   });
 
-  it('reports the single reason when only one is given', () => {
+  it('adapts the message when a 422 carries only one reason', () => {
     const outcome = classifyUploadResponse(422, NO_HEADERS, ONE_REASON);
     if (outcome.ok) return;
     expect(outcome.message).toContain('not included in the list');
     expect(outcome.message).not.toContain('does not match');
-  });
-
-  it('treats a 400 with no declared type as a refusal, not an unknown', () => {
-    expect(classifyUploadResponse(400, NO_HEADERS, NO_CONTENT_TYPE)).toMatchObject({
-      reason: 'rejected_by_endpoint',
-      state: 'known',
-    });
   });
 });
 
@@ -74,8 +68,10 @@ describe('anything not observed', () => {
     [403, '<html>abuse detection</html>'],
     [500, 'Internal Server Error'],
     [301, ''],
-    [200, '{"url":"x"}'],
+    [200, '{"url":"https://github.com/user-attachments/assets/1d5fc1c5-55da-46d1-b330-8bc48791ead8"}'],
     [418, '{"message":"teapot"}'],
+    // Seen before recording began and never captured, so it is not a table row.
+    [400, '{"message":"Invalid Content-Type"}'],
   ])('resolves %i to endpoint_unavailable, never retried', (status, body) => {
     expect(classifyUploadResponse(status, NO_HEADERS, body)).toMatchObject({
       reason: 'endpoint_unavailable',
@@ -84,8 +80,27 @@ describe('anything not observed', () => {
     });
   });
 
-  it('refuses to call a 201 successful when it cannot read the url', () => {
-    expect(classifyUploadResponse(201, NO_HEADERS, 'not json at all')).toMatchObject({
+  it.each([
+    ['a body that is not json', 'not json at all'],
+    ['a body with no url', '{"ok":true}'],
+    ['a url of an unexpected shape', '{"url":"https://example.invalid/somewhere/else"}'],
+    ['an empty url', '{"url":""}'],
+  ])('refuses to call a 201 successful given %s', (_label, body) => {
+    expect(classifyUploadResponse(201, NO_HEADERS, body)).toMatchObject({
+      reason: 'endpoint_unavailable',
+      state: 'unknown',
+    });
+  });
+
+  // A familiar status carrying an unfamiliar body means the endpoint changed under
+  // us, which is exactly the case that must not be reported confidently.
+  it.each([
+    [404, '<html>something else entirely</html>'],
+    [404, '{"message":"Rate limited"}'],
+    [422, '{"nothing":"recognisable"}'],
+    [422, 'not json'],
+  ])('treats %i with an unrecognised body as unknown, not as a known failure', (status, body) => {
+    expect(classifyUploadResponse(status, NO_HEADERS, body)).toMatchObject({
       reason: 'endpoint_unavailable',
       state: 'unknown',
     });
@@ -174,8 +189,7 @@ describe('the curated table stays in step with the code', () => {
 
   it('classifies every status the table records the way the table says', () => {
     for (const row of table.rows) {
-      const body =
-        row.status === 201 ? CREATED : row.status === 404 ? NOT_FOUND : row.status === 422 ? ONE_REASON : NO_CONTENT_TYPE;
+      const body = row.status === 201 ? CREATED : row.status === 404 ? NOT_FOUND : BOTH_REASONS;
       const outcome = classifyUploadResponse(row.status, NO_HEADERS, body);
       const actual = outcome.ok ? 'ok' : outcome.reason;
       expect(actual).toBe(row.outcome);
