@@ -101,9 +101,14 @@ not belong in a frame either.** The frame is more permanent than the text — th
 
 ## Visibility is not a defence
 
-Rendering follows the target's visibility as far as has been observed. Whether an asset stays
-reachable only to members once its URL is quoted somewhere else **is not established** and is not
-promised by this tool. Two rules follow:
+Stage 0 established how this actually works, and it is not what the shape of the URL suggests. The
+attachment URL never serves the image to anyone. GitHub substitutes a short-lived signed URL when it
+**renders** the comment, and that signed URL needs no credentials — during the probe, an asset
+uploaded against a *private* repository and quoted in a *public* issue was fetched anonymously.
+
+So access follows **who can read the comment**, not which repository the file was uploaded against.
+An asset is exactly as private as the most public place its URL has been quoted, and a URL that gets
+copied out is beyond recall. Two rules follow:
 
 - Never tell anyone the attachment is "a public link" or "a private link". Neither is guaranteed.
 - Decide what goes in the frame as though a stranger could open it, because the cheapest assumption

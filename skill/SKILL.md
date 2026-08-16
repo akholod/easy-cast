@@ -71,10 +71,15 @@ Where real data gets into a frame that was supposed to be clean:
 | DevTools panels or a request log left open | close them before capture |
 | Notification toasts and desktop chrome | record the page, not the desktop |
 
-Visibility of the result is not a defence either. Rendering follows the target's visibility as far as
-has been observed, but whether an asset stays reachable only to members once its URL is quoted
-elsewhere **is not established**. Never promise anyone "a public link", and never assume a private
-one. Treat every uploaded frame as though it could be read by a stranger.
+Visibility of the result is not a defence either, and Stage 0 settled why. The URL the tool prints
+never serves the image to anyone; GitHub substitutes a short-lived signed URL when it *renders* the
+comment, and that signed URL works with no credentials at all. So access follows **who can read the
+comment**, not which repository the file was uploaded against — an asset uploaded against a private
+repository and quoted in a public issue was fetched anonymously during the probe.
+
+The practical rule: a URL that leaves a private comment for a public one is public from that moment,
+and nothing here can prevent or detect it. Never promise anyone "a public link", never treat a private
+target as proof of privacy, and treat every uploaded frame as readable by a stranger.
 
 Details and a re-usable checklist: [references/sanitizing.md](references/sanitizing.md).
 
@@ -237,9 +242,11 @@ loop costs one irreversible asset per iteration, and nothing cleans up afterward
 | Looking at the result | open `comment.url` — the rendered comment is where the asset is live | open the asset URL on its own |
 | Seeing a 404 on the asset URL | treat it as expected and say so | re-run, re-upload, or report a failure |
 
-Status of the claim: 404-until-quoted is an **observation, not an established semantic** — it is one
-of the things Stage 0 confirms. The instruction is the same either way, and it is the safe one in
-both directions: do not re-upload to find out.
+Status of the claim: **established by Stage 0**, and stronger than "until quoted". The asset URL
+answers 404 to a direct fetch *permanently* — before citation and after it, in private repositories
+and public ones alike. It is not a link that becomes live; it is an identifier. GitHub serves the
+image by substituting a short-lived signed URL when it renders the comment, so `comment.url` is the
+only place the picture exists. A 404 on the asset URL is never evidence of anything having failed.
 
 ---
 
@@ -339,12 +346,14 @@ real question:
 Say the irreversibility **before** asking for the answer, not after it. The CLI's own exit-6 message
 already states it, so relaying that message is enough on its own.
 
-What this gate does **not** establish: whether an asset uploaded against a *private* repository stays
-unreachable once its URL is quoted somewhere public **is not established** — it is the open question
-DG4, and Stage 0 settles it. A private target is therefore not proof of privacy, and the worth of
-this gate is itself not yet known. Until it is, §2 stands unchanged: treat every uploaded frame as
-readable by a stranger, and let the file's contents — not the repository's visibility — decide
-whether it may be published.
+What this gate does **not** establish, now that Stage 0 has answered it: the asset is not protected by
+the repository it was uploaded against. Access follows who can read the *comment*, because GitHub
+hands anyone who can see that comment a working signed link. The gate is meaningful for `attach` only
+because `attach` posts into the same repository it uploaded against, so the two audiences coincide.
+
+The moment a URL is copied somewhere more public, the file is as public as its new home. A private
+target is therefore not proof of privacy, and §2 stands unchanged: let the file's contents — not the
+repository's visibility — decide whether it may be published.
 
 ---
 

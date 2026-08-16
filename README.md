@@ -14,22 +14,24 @@ contract: `--json` emits exactly one JSON object whatever happens, and every fai
 
 ---
 
-## Status: not functional yet
+## Status: `attach` works, `upload` does not
 
-**The upload path does not work.** Stage 0 — the probe that establishes the undocumented endpoint's
-wire format and response semantics — has not run, so the module that speaks to it is a stub whose
-only answer is `endpoint_unavailable`.
+Stage 0 — the probe that establishes the undocumented endpoint's wire format and response
+semantics — **has run**. What it found is in
+[docs/endpoint-semantics.md](docs/endpoint-semantics.md), and the raw evidence is in
+`fixtures/endpoint/observations.jsonl`.
 
 | Command | State today |
 | --- | --- |
-| `attach` | everything up to the upload runs — argument and media validation, repository and target resolution, the public-repository gate, the plan handshake, identity checks, the repair step, comment composition. The upload step itself answers exit **5** `endpoint_unavailable`, so no attachment is ever produced |
-| `upload` | **not wired at all.** Returns exit **5** `endpoint_unavailable` immediately |
+| `attach` | **works.** Verified end to end against a real repository: dry run, real attach, then the identical command again — which reused the asset, created nothing, and updated the comment rather than adding one |
+| `upload` | **not wired.** Returns exit **5** `endpoint_unavailable` immediately |
 | `recover` | works. It only ever reads the local journal |
 | `--dry-run` | works, and is meaningful: it produces a real plan and a real `--confirm-plan` token |
 
-Nothing below describes behaviour that has been observed against the live endpoint. Statements about
-what GitHub does with an attachment are marked where they are unverified, and the release is blocked
-until a live smoke says otherwise — see [docs/release-readiness.md](docs/release-readiness.md).
+Still not released, and [docs/release-readiness.md](docs/release-readiness.md) says what is
+outstanding. In short: `upload` is unwired, the pre-upload size budget does not yet account for an
+existing comment, and video types, the size ceiling, installation tokens and abuse detection remain
+unprobed — each for a stated reason rather than by oversight.
 
 ---
 
