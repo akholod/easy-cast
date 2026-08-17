@@ -5,6 +5,14 @@ import { redact } from './redact.js';
  * The only module in this package that may import `node:child_process`, enforced
  * statically by `test/leak.arch.test.ts`. Every child process the tool starts
  * inherits an environment assembled here and nothing else.
+ *
+ * "Nothing else" means nothing *the parent held*. The operating system may still
+ * add its own: on macOS a child spawned with `env: {}` arrives carrying
+ * `__CF_USER_TEXT_ENCODING`, inserted below any level Node can reach. CI on
+ * macos-latest found it; it does not happen on Linux. It is a locale hint rather
+ * than anything sensitive, and it is not a variable that leaked from here — but
+ * "a completely empty environment" is not literally true on every platform, so it
+ * is not claimed.
  */
 
 export interface SpawnScrubbedOptions {

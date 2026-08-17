@@ -104,7 +104,7 @@ export async function runUpload(request: UploadRequest, deps: UploadDeps): Promi
       });
     }
 
-    // ---- Conversion. ffmpeg is spawned with an empty environment. ----
+    // ---- Conversion. ffmpeg inherits nothing from this process (allowEnv: []). ----
     const converted: ConversionResult[] = [];
     for (const file of prepared) {
       converted.push(

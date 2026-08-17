@@ -171,7 +171,7 @@ export async function runAttach(
       });
     }
 
-    // ---- Conversion. ffmpeg is spawned with an empty environment, which is what
+    // ---- Conversion. ffmpeg inherits nothing from this process, which is what
     // keeps the credential away from it — the call order is not the guarantee. ----
     // Only video is converted. Running an image through the video profile would
     // upload mp4 bytes under its original name and image content type — a file

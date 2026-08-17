@@ -9,10 +9,23 @@ const DUMP_ENV = 'process.stdout.write(JSON.stringify(process.env))';
 const node = (source: string, allowEnv: readonly string[]) =>
   spawnScrubbed(process.execPath, ['-e', source], { allowEnv });
 
+/**
+ * macOS adds `__CF_USER_TEXT_ENCODING` to every process it starts, below the
+ * level anything here can reach: it appears in a child spawned with `env: {}`.
+ * CI on macos-latest is what found it — it does not reproduce on Linux.
+ *
+ * It is dropped rather than asserted away, and by exact name rather than by
+ * pattern, because the property under test is "nothing the parent holds reaches
+ * the child". A variable the operating system inserts is not something the parent
+ * passed, but anything else appearing here would be, and must still fail.
+ */
+const OS_INJECTED = new Set(['__CF_USER_TEXT_ENCODING']);
+
 const childEnv = async (allowEnv: readonly string[]): Promise<Record<string, string>> => {
   const result = await node(DUMP_ENV, allowEnv);
   expect(result.exitCode).toBe(0);
-  return JSON.parse(result.stdout) as Record<string, string>;
+  const env = JSON.parse(result.stdout) as Record<string, string>;
+  return Object.fromEntries(Object.entries(env).filter(([name]) => !OS_INJECTED.has(name)));
 };
 
 const original = { ...process.env };
@@ -21,8 +34,17 @@ afterEach(() => {
 });
 
 describe('spawnScrubbed environment', () => {
-  it('gives a child with allowEnv [] a completely empty environment', async () => {
+  it('gives a child with allowEnv [] nothing the parent was holding', async () => {
+    process.env.EASY_CAST_SHOULD_NOT_TRAVEL = 'secret-ish';
     expect(await childEnv([])).toEqual({});
+  });
+
+  // Guards the filter above: if OS_INJECTED ever grew into a blanket exemption,
+  // this is what would notice.
+  it('drops only the name the operating system inserts, nothing else', async () => {
+    process.env.__CF_USER_TEXT_ENCODING_LOOKALIKE = 'x';
+    const env = await childEnv(['__CF_USER_TEXT_ENCODING_LOOKALIKE']);
+    expect(env).toEqual({ __CF_USER_TEXT_ENCODING_LOOKALIKE: 'x' });
   });
 
   it('passes only the named variables, never the rest of process.env', async () => {
