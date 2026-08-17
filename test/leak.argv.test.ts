@@ -3,6 +3,7 @@ import { spawn as unscrubbedSpawn } from 'node:child_process';
 import { spawnScrubbed } from '../src/secret/spawn.js';
 import { ghAllowEnv } from '../src/secret/token.js';
 import { redact } from '../src/secret/redact.js';
+import { withoutOsInjected } from './support/os-injected-env.js';
 
 /**
  * The blocking gate: a real child process, a real token shape, and the four
@@ -76,9 +77,11 @@ describe('gh runs under the identity that uploads (D13)', () => {
 });
 
 describe('ffmpeg-shaped calls get nothing at all', () => {
-  it('runs with an empty environment under allowEnv []', async () => {
+  it('inherits nothing this process was holding under allowEnv []', async () => {
     const { report } = await observe([]);
-    expect(report.env).toEqual({});
+    // Not `toEqual({})`: macOS inserts a variable of its own into every child,
+    // which the parent never held — see test/support/os-injected-env.ts.
+    expect(withoutOsInjected(report.env)).toEqual({});
   });
 });
 

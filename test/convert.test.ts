@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
+import { isOsInjected } from './support/os-injected-env.js';
 import {
   accessSync,
   constants,
@@ -166,7 +167,7 @@ describe('how ffmpeg is started', () => {
 
   // Delegates to the real spawnScrubbed with the options convert chose, so this
   // observes an actual child's environment instead of restating the argument.
-  it.skipIf(!ENV_BIN)('gives the child an empty environment', async () => {
+  it.skipIf(!ENV_BIN)('gives the child nothing this process was holding', async () => {
     process.env.PATH = stubBin;
     const seen: { options: SpawnScrubbedOptions; stdout: string }[] = [];
     const spawn: typeof spawnScrubbed = async (_command, _args, options) => {
@@ -179,7 +180,15 @@ describe('how ffmpeg is started', () => {
 
     expect(seen).toHaveLength(1);
     expect(seen[0]!.options.allowEnv).toEqual([]);
-    expect(seen[0]!.stdout).toBe('');
+    // `env` prints one NAME=VALUE per line. Whatever the platform inserted of its
+    // own accord is not something this process passed — see
+    // test/support/os-injected-env.ts.
+    const namesSeen = seen[0]!.stdout
+      .split('\n')
+      .filter((line) => line !== '')
+      .map((line) => line.slice(0, line.indexOf('=')))
+      .filter((name) => !isOsInjected(name));
+    expect(namesSeen).toEqual([]);
   });
 });
 
