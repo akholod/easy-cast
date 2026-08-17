@@ -16,8 +16,14 @@ const NO_HEADERS = {};
  * The bodies below are the ones stage 0 actually received. Fixtures rather than
  * invented strings: a classifier tested against strings someone imagined agrees
  * with the imagination, not with GitHub.
+ *
+ * One substitution: the asset UUID is fabricated. A real one is a capability —
+ * it identifies bytes that can never be deleted — and this repository is public.
+ * The scrubber redacts UUIDs out of the observation log for exactly that reason,
+ * and a test fixture is no different. Only the id is replaced; the shape, which
+ * is what the classifier checks, is untouched.
  */
-const CREATED = '{"url":"https://github.com/user-attachments/assets/1d5fc1c5-55da-46d1-b330-8bc48791ead8"}';
+const CREATED = '{"url":"https://github.com/user-attachments/assets/00000000-1111-2222-3333-444444444444"}';
 const NOT_FOUND = '{"message":"Not Found","documentation_url":"https://docs.github.com/rest"}';
 const BOTH_REASONS =
   '{"message":"Validation Failed","errors":[' +
@@ -67,7 +73,7 @@ describe('the responses stage 0 actually saw', () => {
     const outcome = classifyUploadResponse(201, NO_HEADERS, CREATED);
     expect(outcome).toEqual({
       ok: true,
-      url: 'https://github.com/user-attachments/assets/1d5fc1c5-55da-46d1-b330-8bc48791ead8',
+      url: 'https://github.com/user-attachments/assets/00000000-1111-2222-3333-444444444444',
     });
   });
 
@@ -105,7 +111,7 @@ describe('anything not observed', () => {
     [403, '<html>abuse detection</html>'],
     [500, 'Internal Server Error'],
     [301, ''],
-    [200, '{"url":"https://github.com/user-attachments/assets/1d5fc1c5-55da-46d1-b330-8bc48791ead8"}'],
+    [200, '{"url":"https://github.com/user-attachments/assets/00000000-1111-2222-3333-444444444444"}'],
     [418, '{"message":"teapot"}'],
     // Seen before recording began and never captured, so it is not a table row.
     [400, '{"message":"Invalid Content-Type"}'],
