@@ -165,7 +165,7 @@ These are genuinely open, not overlooked:
 
 ## Permanent artefacts created
 
-Seven attachments, which **cannot be deleted**. The full accounting is in
+Nine attachments, which **cannot be deleted**. The full accounting is in
 [release-readiness.md](release-readiness.md); by probe date:
 
 | When | Case | Repository it was uploaded against |
@@ -177,6 +177,7 @@ Seven attachments, which **cannot be deleted**. The full accounting is in
 | 2026-08-16 | `attach` live smoke (`.png`) | private |
 | 2026-08-17 | video live smoke (`.mp4`) | private |
 | 2026-08-17 | `upload` live smoke (`.png`) | private |
+| 2026-08-17 | `report` live smoke (`.mp4` and `.png`) | private |
 
 The size-ceiling probe of 2026-08-17 created none: the size was declared rather
 than sent, so the answer cost a round trip instead of an asset.

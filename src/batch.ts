@@ -21,6 +21,15 @@ export interface PreparedFile {
   readonly contentType: string;
   readonly category: 'image' | 'video';
   readonly sizeVerdict: 'ok' | 'warn';
+  /**
+   * Every input path that resolved to these bytes, first occurrence first.
+   *
+   * Usually one. Two entries mean the caller named the same content twice under
+   * different paths — a copy of a screenshot, say. It is uploaded once, but a
+   * report still has to be able to place *both* references, so the mapping from
+   * path to result cannot be built from the canonical path alone.
+   */
+  readonly paths: readonly string[];
 }
 
 /**
@@ -33,15 +42,21 @@ export interface PreparedFile {
  */
 export function prepare(files: readonly string[]): PreparedFile[] {
   const prepared: PreparedFile[] = [];
-  const seen = new Set<string>();
+  const byHash = new Map<string, string[]>();
 
   for (const path of files) {
     const snapshot = captureSource(path);
     const sourceHash = computeSourceHash(snapshot);
     // First occurrence wins, matching the plan token's own de-duplication, so the
-    // same file named twice is uploaded once rather than twice.
-    if (seen.has(sourceHash)) continue;
-    seen.add(sourceHash);
+    // same file named twice is uploaded once rather than twice. The later path is
+    // still remembered: something may need to refer to the result by that name.
+    const already = byHash.get(sourceHash);
+    if (already) {
+      already.push(path);
+      continue;
+    }
+    const paths = [path];
+    byHash.set(sourceHash, paths);
 
     const name = basename(path);
     const kind = classifyExtension(name);
@@ -63,6 +78,8 @@ export function prepare(files: readonly string[]): PreparedFile[] {
       contentType: kind.contentType,
       category: kind.category,
       sizeVerdict: size.level,
+      // The array, not a copy: later duplicates push into it as they are found.
+      paths,
     });
   }
 

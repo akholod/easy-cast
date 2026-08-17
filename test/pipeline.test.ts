@@ -13,6 +13,8 @@ import type { GitHubApi, OwnComment } from '../src/github/api.js';
 import type { ResolvedTarget } from '../src/target/resolve.js';
 import type { UploadOutcome, UploadPort } from '../src/upload/port.js';
 import { EasyCastError } from '../src/errors.js';
+import { createHash } from 'node:crypto';
+import { parseReportSpec } from '../src/report/spec.js';
 
 let dir: string;
 let journal: Journal;
@@ -563,5 +565,123 @@ describe('temporary files', () => {
     const a = file('a.png', 'aaa');
     await expect(runAttach(request([a], { confirmPlan: tokenFor([a]) }), h.deps)).rejects.toThrow();
     expect(existsSync(stale)).toBe(false);
+  });
+});
+
+/**
+ * A report goes down the same path as an attach — same validation, plan, journal,
+ * ledger, marker and repair — and differs only in what the comment says. These
+ * pin both halves of that: the sameness, and the one difference.
+ */
+describe('report', () => {
+  const specOf = (sections: unknown, extra: Record<string, unknown> = {}) =>
+    JSON.stringify({ version: 1, sections, ...extra });
+
+  const reportRun = (source: string, files: string[], h = harness()) => {
+    const spec = parseReportSpec(source);
+    const specHash = createHash('sha256').update(JSON.stringify(spec)).digest('hex');
+    const hashes = dedupeByFirstOccurrence(files.map((path) => computeSourceHash(captureSource(path))));
+    const confirmPlan = computePlanToken({
+      scope: {
+        command: 'report',
+        owner: 'akholod',
+        repo: 'easy-cast',
+        kind: 'pr',
+        number: 42,
+        key: defaultKey('report', hashes),
+        convertPolicy: 'none',
+        specHash,
+      },
+      sourceHashes: hashes,
+    });
+    return runAttach(
+      { ...request(files), command: 'report', confirmPlan, report: { spec, specHash } },
+      h.deps,
+    );
+  };
+
+  it('composes the comment from the spec instead of stacking the batch', async () => {
+    const a = file('a.png', 'aaa');
+    const b = file('b.png', 'bbb');
+    const h = harness();
+    const output = await reportRun(
+      specOf(
+        [
+          { heading: 'What changed', artifacts: [{ path: a, label: 'the new row' }] },
+          { heading: 'Folded', collapsed: true, artifacts: [{ path: b, label: 'the empty state' }] },
+        ],
+        { title: 'Members table' },
+      ),
+      [a, b],
+      h,
+    );
+
+    expect(output.exitCode).toBe(0);
+    expect(output.command).toBe('report');
+    const body = h.comments[0]!.body;
+    expect(body).toContain('### Members table');
+    expect(body).toContain('#### What changed');
+    expect(body).toContain('![the new row](https://example.invalid/a/0)');
+    expect(body).toContain('<summary>Folded</summary>');
+  });
+
+  it('still carries the marker and the ledger, so a repeat reuses what it uploaded', async () => {
+    const a = file('a.png', 'aaa');
+    const source = specOf([{ text: 'x', artifacts: [{ path: a, label: 'shot' }] }]);
+    const h = harness();
+
+    await reportRun(source, [a], h);
+    const again = await reportRun(source, [a], h);
+
+    expect(h.uploadCount()).toBe(1);
+    expect(again.assetsCreated).toBe(0);
+    expect(again.uploaded[0].status).toBe('reused');
+    expect(h.comments).toHaveLength(1);
+  });
+
+  // Otherwise a report and a plain attach of the same files would fight over the
+  // same comment, each overwriting the other.
+  it('addresses a different comment than an attach of the same files', async () => {
+    const a = file('a.png', 'aaa');
+    const h = harness();
+
+    await runAttach(request([a], { confirmPlan: tokenFor([a]) }), h.deps);
+    await reportRun(specOf([{ text: 'x', artifacts: [{ path: a, label: 'shot' }] }]), [a], h);
+
+    expect(h.comments).toHaveLength(2);
+  });
+
+  // The composed text is as much the product as the bytes are.
+  it('refuses a token issued for a different spec, and uploads nothing', async () => {
+    const a = file('a.png', 'aaa');
+    const h = harness();
+    const spec = parseReportSpec(specOf([{ text: 'x', artifacts: [{ path: a, label: 'one' }] }]));
+    const hashes = [computeSourceHash(captureSource(a))];
+    const staleToken = computePlanToken({
+      scope: {
+        command: 'report',
+        owner: 'akholod',
+        repo: 'easy-cast',
+        kind: 'pr',
+        number: 42,
+        key: defaultKey('report', hashes),
+        convertPolicy: 'none',
+        specHash: 'a-hash-from-an-earlier-spec',
+      },
+      sourceHashes: hashes,
+    });
+
+    await expect(
+      runAttach(
+        {
+          ...request([a]),
+          command: 'report',
+          confirmPlan: staleToken,
+          report: { spec, specHash: 'the-current-hash' },
+        },
+        h.deps,
+      ),
+    ).rejects.toMatchObject({ reason: 'plan_mismatch' });
+    expect(h.uploadCount()).toBe(0);
   });
 });

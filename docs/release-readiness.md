@@ -46,9 +46,9 @@ Every row must be true before `pnpm publish`.
 | 4 | `src/upload/wire.ts`, `classify.ts` and `upload.ts` are implemented against the established wire format, replacing the stub port | **met** — the stub was deleted in `eb48310` |
 | 5 | `upload` is wired to a real implementation rather than returning `endpoint_unavailable` unconditionally | **met** — 2026-08-17; see [ADR 023](decisions/023-upload-keeps-no-local-state.md) |
 | 6 | `mime-table.ts` has been reconciled against Stage 0 findings, or an explicit "no divergence found" is recorded with provenance | **met** — `.png`, `.gif` and `.mp4` observed accepted, and the 10 MB figure is now the endpoint's own words rather than the documentation's. `.webm`, `.mov`, `.jpg`, `.webp` and `.svg` remain documentation-derived and are listed as such |
-| 7 | One live smoke against a private repository has been run, and its result is recorded in this file | **met** — four of them, below |
+| 7 | One live smoke against a private repository has been run, and its result is recorded in this file | **met** — five of them, below |
 | 8 | The live smoke did **not** end in `endpoint_unavailable` | **met** |
-| 9 | `pnpm test`, `pnpm typecheck` and `pnpm lint` all exit 0 | **met** — 627 tests |
+| 9 | `pnpm test`, `pnpm typecheck` and `pnpm lint` all exit 0 | **met** — 680 tests, green on ubuntu and macos in CI |
 | 10 | The leak set is green: no token in argv, stdout, stderr, JSON or anomalies; `scrubObservation()` gates every probe fixture | **met** — re-verified after the 2026-08-17 observations were added |
 | 11 | The 404-until-quoted behaviour is confirmed rather than assumed, and the wording in `src/output.ts` matches what was observed | **met**, and stronger than the original claim: the canonical URL answers 404 permanently, to a direct fetch, in every case |
 | 12 | README carries the authorisation matrix with `GITHUB_TOKEN` unsupported, and the full "not guaranteed" list | **met** |
@@ -101,6 +101,16 @@ Declared `size=5368709120` (5 GiB) while sending 64 bytes:
 - The message is written for the web UI and arrives wrapped in `<span>` markup. The classifier strips
   the tags before the message reaches a caller; the wording is untouched, and the raw body is recorded
   verbatim in `fixtures/endpoint/observations.jsonl`.
+
+### 2026-08-17 — `report`, same repository
+
+| Step | Result |
+| --- | --- |
+| `harvest ./shots --out spec.json` | four files found, every label blank, **nothing uploaded** |
+| `compose --spec report.json` | printed the comment with `NOT-UPLOADED-YET:` placeholders, **nothing uploaded** |
+| `report` with an unedited spec | exit 2 `bad_args` — the placeholder guard fired |
+| `report --spec report.json --to issue:1` | exit 0, two assets created for four artifacts: three of the PNGs were byte-identical, so they were uploaded once and referenced three times |
+| how it rendered | `body_html` carried `<h3>`, `<h4>`×2, `<video>`, `<table>` and `<details>` — the whole structure |
 
 ### 2026-08-17 — `upload`, same repository
 
@@ -162,7 +172,7 @@ comparison that happens before anything is uploaded.
 
 ## Permanent artefacts
 
-Seven attachments exist and **cannot be deleted**:
+Nine attachments exist and **cannot be deleted**:
 
 | When | Case | Repository it was uploaded against |
 | --- | --- | --- |
@@ -173,6 +183,8 @@ Seven attachments exist and **cannot be deleted**:
 | 2026-08-16 | `attach` live smoke (`.png`) | private |
 | 2026-08-17 | video live smoke (`.mp4`) | private |
 | 2026-08-17 | `upload` live smoke (`.png`) | private |
+| 2026-08-17 | `report` live smoke (`.mp4`) | private |
+| 2026-08-17 | `report` live smoke (`.png`) | private |
 
 The 2026-08-17 size probe created **none** — that was the point of asking it the cheap way.
 

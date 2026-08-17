@@ -48,9 +48,16 @@ export interface TargetReport {
   readonly number?: number;
 }
 
+/**
+ * `harvest` and `compose` are local and non-mutating — they read files and write
+ * a document — but they answer on the same contract as everything else, because a
+ * caller that has to special-case two commands will special-case them wrongly.
+ */
+export type CommandName = 'upload' | 'attach' | 'recover' | 'report' | 'harvest' | 'compose';
+
 export interface CliJsonOutput {
   readonly schema: typeof SCHEMA;
-  readonly command: 'upload' | 'attach' | 'recover';
+  readonly command: CommandName;
   readonly ok: boolean;
   readonly exitCode: ExitCode;
   readonly reason: Reason;
@@ -87,6 +94,15 @@ export interface CliJsonOutput {
    */
   readonly notes?: readonly string[];
   readonly environment?: { readonly ffmpegAvailable: boolean };
+  /**
+   * A document the command produced: `compose`'s comment body, `harvest`'s spec.
+   *
+   * Separate from `message`, which explains an outcome. Putting a composed
+   * markdown body in `message` would make an agent parse an explanation to find
+   * a deliverable, and would leave a human reading "every URL above is a
+   * placeholder" above the URLs it was talking about.
+   */
+  readonly body?: string;
 }
 
 /**
@@ -127,7 +143,7 @@ export const UPLOAD_EXPOSURE_FOLLOWS_QUOTING =
   'why upload has no public-repository gate: there is nothing for it to gate.';
 
 export interface OutputDraft {
-  readonly command: 'upload' | 'attach' | 'recover';
+  readonly command: CommandName;
   readonly reason: Reason;
   readonly message?: string;
   readonly uploaded?: readonly UploadedFileReport[];
@@ -142,6 +158,7 @@ export interface OutputDraft {
   readonly dryRun?: boolean;
   readonly notes?: readonly string[];
   readonly environment?: { readonly ffmpegAvailable: boolean };
+  readonly body?: string;
   /**
    * `state` may be folded per run, because a batch genuinely can be mixed.
    * `retryable` deliberately has NO override: it is decided by the (code, reason)
@@ -176,6 +193,7 @@ export function buildOutput(draft: OutputDraft): CliJsonOutput {
     ...(draft.dryRun ? { dryRun: true } : {}),
     ...(draft.notes?.length ? { notes: draft.notes } : {}),
     ...(draft.environment ? { environment: draft.environment } : {}),
+    ...(draft.body ? { body: draft.body } : {}),
   };
 }
 

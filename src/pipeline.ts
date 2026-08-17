@@ -38,11 +38,13 @@ import {
 } from './output.js';
 import { computePlanToken, verifyPlanToken, type PlanFingerprint, type PlanScope } from './plan-token.js';
 import { renderBatch } from './render.js';
+import { renderReport, type ResolvedArtifact } from './report/render-report.js';
+import type { ReportSpec } from './report/spec.js';
 import type { ResolvedTarget } from './target/resolve.js';
 import type { UploadPort, UploadTarget } from './upload/port.js';
 
 export interface PipelineRequest {
-  readonly command: 'attach';
+  readonly command: 'attach' | 'report';
   readonly files: readonly string[];
   readonly caption?: string;
   readonly key?: string;
@@ -50,6 +52,13 @@ export interface PipelineRequest {
   readonly noConvert: boolean;
   readonly allowPublic: boolean;
   readonly confirmPlan?: string;
+  /**
+   * `report` only. Everything before the comment is written is identical to
+   * `attach` — the same validation, plan handshake, journal, ledger, marker and
+   * repair — because a report is not a different kind of upload, only a different
+   * arrangement of what the comment says. Only the composed body differs.
+   */
+  readonly report?: { readonly spec: ReportSpec; readonly specHash: string };
 }
 
 export interface PipelineDeps {
@@ -74,6 +83,33 @@ export interface PipelineDeps {
   readonly ffmpegAvailable: () => boolean;
 }
 
+interface RenderedAsset {
+  readonly url: string;
+  readonly category: 'image' | 'video';
+  readonly name: string;
+  /** Every input path that resolved to this asset — see PreparedFile.paths. */
+  readonly paths: readonly string[];
+}
+
+/**
+ * How the comment's visible content is produced.
+ *
+ * `attach` stacks the batch under an optional caption. `report` arranges the same
+ * URLs according to a spec the caller wrote. Both end up as the one `rendered`
+ * block `composeBody` places between the marker and the ledger, so everything
+ * downstream — the budget, the ledger-only path, repair — is unaware of which
+ * one ran.
+ */
+function renderVisible(request: PipelineRequest, rendered: readonly RenderedAsset[]): string {
+  if (!request.report) return renderBatch(rendered);
+
+  const resolved = new Map<string, ResolvedArtifact>();
+  for (const asset of rendered) {
+    for (const path of asset.paths) resolved.set(path, { url: asset.url, category: asset.category });
+  }
+  return renderReport(request.report.spec, resolved);
+}
+
 const scopeOf = (target: ResolvedTarget, key: string): Scope => ({
   owner: target.owner,
   repo: target.repo,
@@ -92,7 +128,9 @@ export async function runAttach(
     // ---- Non-mutating pre-flight. Nothing here changes anything, anywhere. ----
     const prepared = prepare(request.files);
     const sourceHashes = prepared.map((file) => file.sourceHash);
-    const key = request.key ? validateKey(request.key) : defaultKey('attach', sourceHashes);
+    // The namespace is the command, so a report and a plain attach of the same
+    // files address different comments instead of overwriting each other.
+    const key = request.key ? validateKey(request.key) : defaultKey(request.command, sourceHashes);
 
     const target = await deps.resolveTarget();
     anomalies.push(...target.anomalies);
@@ -107,13 +145,16 @@ export async function runAttach(
     }
 
     const scope: PlanScope = {
-      command: 'attach',
+      command: request.command,
       owner: target.owner,
       repo: target.repo,
       kind: target.kind,
       number: target.number,
       key,
       convertPolicy: request.noConvert ? 'none' : 'auto',
+      // Binds the composed text, not only the bytes: a token obtained for one set
+      // of labels must not authorise posting another.
+      ...(request.report ? { specHash: request.report.specHash } : {}),
     };
     const fingerprint: PlanFingerprint = { scope, sourceHashes };
 
@@ -205,7 +246,7 @@ export async function runAttach(
 
     const reports: UploadedFileReport[] = [];
     const outcomes: FileOutcome[] = [];
-    const rendered: { url: string; category: 'image' | 'video'; name: string }[] = [];
+    const rendered: RenderedAsset[] = [];
     let assetsCreated = 0;
 
     for (const [index, file] of prepared.entries()) {
@@ -214,7 +255,7 @@ export async function runAttach(
 
       if (known) {
         ledger = touchEntry(ledger, digest, known);
-        rendered.push({ url: known, category: file.category, name: file.name });
+        rendered.push({ url: known, category: file.category, name: file.name, paths: file.paths });
         reports.push({ ...base(file, digest), status: 'reused', url: known, state: 'known', retryable: false });
         outcomes.push({ succeeded: true, state: 'known', retryable: false });
         continue;
@@ -239,7 +280,7 @@ export async function runAttach(
         deps.journal.appendEvent(assetRecorded(digest, outcome.url, runScope, deps.now()));
         assetsCreated += 1;
         ledger = touchEntry(ledger, digest, outcome.url);
-        rendered.push({ url: outcome.url, category: file.category, name: file.name });
+        rendered.push({ url: outcome.url, category: file.category, name: file.name, paths: file.paths });
         reports.push({ ...base(file, digest), status: 'uploaded', url: outcome.url, state: 'known', retryable: false });
         outcomes.push({ succeeded: true, state: 'known', retryable: false });
         continue;
@@ -342,7 +383,7 @@ function planOutput(
 ): CliJsonOutput {
   const { pending } = deps.journal.foldPending();
   return buildOutput({
-    command: 'attach',
+    command: request.command,
     reason: 'dry_run',
     dryRun: true,
     planToken: computePlanToken(fingerprint),
@@ -398,7 +439,7 @@ async function write(context: {
   login: string;
   existingBody?: string;
   ledger: readonly (readonly [string, string])[];
-  rendered: { url: string; category: 'image' | 'video'; name: string }[];
+  rendered: RenderedAsset[];
   reports: UploadedFileReport[];
   outcomes: FileOutcome[];
   assetsCreated: number;
@@ -430,7 +471,7 @@ async function write(context: {
       const body = composeBody({
         marker: marker(key),
         caption: context.request.caption,
-        rendered: [renderBatch(context.rendered)],
+        rendered: [renderVisible(context.request, context.rendered)],
         ledger: ledgerBlock,
       });
       const result = await upsertComment(deps.api, target.owner, target.repo, target.number, key, login, body);
@@ -471,7 +512,7 @@ async function write(context: {
       : 'partial_upload_blocked';
 
   return buildOutput({
-    command: 'attach',
+    command: context.request.command,
     reason,
     assetsCreated: context.assetsCreated,
     uploaded: reports,

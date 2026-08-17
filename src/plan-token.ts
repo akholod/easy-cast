@@ -20,10 +20,10 @@ import { createHash } from 'node:crypto';
  * profile is unknown at plan time.
  */
 
-export const PLAN_TOKEN_VERSION = 'v1';
+export const PLAN_TOKEN_VERSION = 'v2';
 
 export interface PlanScope {
-  readonly command: 'upload' | 'attach';
+  readonly command: 'upload' | 'attach' | 'report';
   readonly owner: string;
   readonly repo: string;
   /** Absent for `upload`, which has no issue or pull request. */
@@ -32,6 +32,16 @@ export interface PlanScope {
   /** Absent for `upload`, which never writes a comment and so has no key. */
   readonly key?: string;
   readonly convertPolicy: 'auto' | 'none';
+  /**
+   * `report` only: a hash of the spec that will be composed into the comment.
+   *
+   * For `attach` and `upload` the bytes leaving the machine are the whole
+   * product, so the source hashes describe the plan completely. For `report` the
+   * composed text is just as much the product — a caller who obtained a token,
+   * then rewrote a label, would post something the plan never described. Binding
+   * the spec closes that, and is why the token version is v2.
+   */
+  readonly specHash?: string;
 }
 
 export interface PlanFingerprint {
@@ -46,6 +56,7 @@ export type ChangedDimension =
   | 'target'
   | 'key'
   | 'convert-policy'
+  | 'report-spec'
   | 'token-version'
   | 'unknown';
 
@@ -85,6 +96,7 @@ export function canonicalPayload(fingerprint: PlanFingerprint): Buffer {
     scope.number === undefined ? '' : String(scope.number),
     scope.key ?? '',
     scope.convertPolicy,
+    scope.specHash ?? '',
     String(fingerprint.sourceHashes.length),
     ...fingerprint.sourceHashes,
   ];
@@ -119,6 +131,7 @@ function diff(previous: PlanFingerprint, actual: PlanFingerprint): ChangedDimens
   if (!sameTarget(previous.scope, actual.scope)) changed.push('target');
   if (previous.scope.key !== actual.scope.key) changed.push('key');
   if (previous.scope.convertPolicy !== actual.scope.convertPolicy) changed.push('convert-policy');
+  if (previous.scope.specHash !== actual.scope.specHash) changed.push('report-spec');
 
   const before = previous.sourceHashes;
   const after = actual.sourceHashes;

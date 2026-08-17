@@ -417,7 +417,7 @@ Two consequences that catch people:
 | [references/annotations.md](references/annotations.md) | the frame needs a callout, a box or a label |
 | [references/sanitizing.md](references/sanitizing.md) | the app is logged in, the data is not obviously fictional, or the repository is public |
 | [references/failures.md](references/failures.md) | the command exited non-zero, or you are writing error handling around it |
-| [references/visual-reports.md](references/visual-reports.md) | — not yet; iteration 2 |
+| [references/visual-reports.md](references/visual-reports.md) | several artifacts belong in one comment: `harvest`, `compose`, `report` |
 
 Neighbouring skills, by name — never by path, because the path differs per machine and the name does
 not:

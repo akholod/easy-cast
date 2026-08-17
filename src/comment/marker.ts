@@ -9,6 +9,19 @@ import { badKey } from '../errors.js';
  */
 
 export const MARKER_VERSION = 1;
+
+/**
+ * One kind, and `report` shares it.
+ *
+ * The segment names the *family of comment* — one this tool owns, carrying
+ * attachments and a ledger — not the command that produced it. A report writes
+ * exactly that comment; only its visible arrangement differs. What keeps the two
+ * from fighting over the same comment is the key, whose default is namespaced by
+ * command (`attach-…` versus `report-…`).
+ *
+ * Splitting the kind would change a format already written into permanent
+ * comments, to record something the key already records.
+ */
 export type MarkerKind = 'attach';
 
 /**
@@ -46,7 +59,7 @@ export function validateKey(key: string): string {
  * comment rather than silently replacing the evidence already posted. Passing an
  * explicit `--key` is how a caller asks to replace instead.
  */
-export function defaultKey(command: 'upload' | 'attach', sourceHashes: readonly string[]): string {
+export function defaultKey(command: 'upload' | 'attach' | 'report', sourceHashes: readonly string[]): string {
   const digest = createHash('sha256').update([...sourceHashes].sort().join('\n')).digest('hex');
   return `${command}-${digest.slice(0, 8)}`;
 }

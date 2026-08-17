@@ -2,12 +2,14 @@
 import { resolve } from 'node:path';
 import { HELP, parseArgs, type ParsedArgs } from './cli-args.js';
 import { targetNotFound, toEasyCastError } from './errors.js';
-import { buildOutput, renderJson, type CliJsonOutput } from './output.js';
+import { buildOutput, renderJson, type CliJsonOutput, type CommandName } from './output.js';
 import { redact, redactValues } from './secret/redact.js';
 import { createJournal } from './journal.js';
 import { recover } from './recover.js';
 import { runAttach } from './pipeline.js';
 import { runUpload } from './upload-run.js';
+import { assertEdited, readSpec, runCompose, runHarvest } from './report/commands.js';
+import { pathsOf } from './report/spec.js';
 import { createUploadPort } from './upload/upload.js';
 import type { GitHubApi } from './github/api.js';
 import { createGhApi } from './github/gh-cli.js';
@@ -96,9 +98,15 @@ export async function runCli(argv: readonly string[], io: Io = defaultIo): Promi
  * field in the one object the contract promises. The verb is taken from argv for
  * the same reason `--json` is.
  */
-function commandFor(parsed: ParsedArgs | undefined, argv: readonly string[]): 'upload' | 'attach' | 'recover' {
+function commandFor(parsed: ParsedArgs | undefined, argv: readonly string[]): CommandName {
   const command = parsed?.command ?? argv[0];
-  return command === 'upload' || command === 'recover' ? command : 'attach';
+  return command === 'upload' ||
+    command === 'recover' ||
+    command === 'report' ||
+    command === 'harvest' ||
+    command === 'compose'
+    ? command
+    : 'attach';
 }
 
 const isPlanContext = (
@@ -123,6 +131,8 @@ function emit(output: CliJsonOutput, json: boolean, io: Io): void {
 
 function human(output: CliJsonOutput): string {
   const lines: string[] = [];
+  // The document a command produced comes first: the notes below refer to it.
+  if (output.body) lines.push(output.body);
   if (output.target) {
     const { owner, repo, kind, number, repoSource } = output.target;
     const where = number === undefined ? `${owner}/${repo}` : `${owner}/${repo} ${kind}#${number}`;
@@ -178,6 +188,16 @@ async function execute(parsed: ParsedArgs, io: Io): Promise<CliJsonOutput> {
 
   if (parsed.command === 'recover') return recover(journal);
 
+  // Local, non-mutating, and deliberately ahead of the credential: neither reads
+  // a token, and neither should fail because the machine has none.
+  if (parsed.command === 'harvest') {
+    return runHarvest(parsed.files, {
+      ...(parsed.out === undefined ? {} : { out: parsed.out }),
+      ...(parsed.limit === undefined ? {} : { limit: parsed.limit }),
+    });
+  }
+  if (parsed.command === 'compose') return runCompose(parsed.spec!);
+
   const source = await resolveToken();
   const api = createGhApi({ spawn: spawnScrubbed, allowEnv: ghAllowEnv(source.source) });
   // With an explicit --repo there is nothing to infer, so git is not consulted at
@@ -204,17 +224,24 @@ async function execute(parsed: ParsedArgs, io: Io): Promise<CliJsonOutput> {
     );
   }
 
+  // A report is an attach whose comment body comes from a document instead of
+  // from the argument list. Everything else — validation, plan, journal, ledger,
+  // marker, repair — is the same path, which is why it is the same call.
+  const report = parsed.command === 'report' ? readSpec(parsed.spec!) : undefined;
+  if (report) assertEdited(report.spec);
+
   const tmp: string[] = [];
   return runAttach(
     {
-      command: 'attach',
-      files: parsed.files,
+      command: parsed.command === 'report' ? 'report' : 'attach',
+      files: report ? pathsOf(report.spec) : parsed.files,
       caption: parsed.caption,
       key: parsed.key,
       dryRun: parsed.dryRun,
       noConvert: parsed.noConvert,
       allowPublic: parsed.allowPublic,
       confirmPlan: parsed.confirmPlan,
+      ...(report ? { report: { spec: report.spec, specHash: report.specHash } } : {}),
     },
     {
       api,

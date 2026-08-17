@@ -3,6 +3,7 @@ import {
   canonicalPayload,
   computePlanToken,
   dedupeByFirstOccurrence,
+  PLAN_TOKEN_VERSION,
   verifyPlanToken,
   type PlanFingerprint,
   type PlanScope,
@@ -32,8 +33,11 @@ describe('plan token', () => {
     expect(computePlanToken(fp())).toBe(computePlanToken(fp()));
   });
 
+  // Written against the constant rather than a literal: the version is expected
+  // to move — it moved to v2 when the report spec joined the fingerprint — and a
+  // hardcoded one only ever fails at the moment the change is deliberate.
   it('carries its format version so a future format is never guessed at', () => {
-    expect(computePlanToken(fp())).toMatch(/^v1\.[0-9a-f]{64}$/);
+    expect(computePlanToken(fp())).toMatch(new RegExp(`^${PLAN_TOKEN_VERSION}\\.[0-9a-f]{64}$`));
   });
 
   // The five dimensions the token is claimed to bind. If any of these stopped
@@ -98,7 +102,7 @@ describe('verification', () => {
   });
 
   it('quarantines a token from an unknown format version instead of interpreting it', () => {
-    const result = verifyPlanToken('v2.' + 'f'.repeat(64), fp());
+    const result = verifyPlanToken('v999.' + 'f'.repeat(64), fp());
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.planContext.changed).toEqual(['token-version']);
@@ -123,7 +127,7 @@ describe('verification', () => {
   });
 
   it('admits it does not know what changed when the previous plan is unavailable', () => {
-    const result = verifyPlanToken('v1.' + '0'.repeat(64), fp());
+    const result = verifyPlanToken(`${PLAN_TOKEN_VERSION}.${'0'.repeat(64)}`, fp());
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.planContext.changed).toEqual(['unknown']);

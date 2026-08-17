@@ -14,7 +14,7 @@ contract: `--json` emits exactly one JSON object whatever happens, and every fai
 
 ---
 
-## Status: all three commands work; not yet published
+## Status: every command works; not yet published
 
 Stage 0 — the probe that establishes the undocumented endpoint's wire format and response
 semantics — **has run**. What it found is in
@@ -26,6 +26,8 @@ semantics — **has run**. What it found is in
 | `attach` | **works.** Verified end to end against a real repository, for a screenshot and for a video: dry run, real attach, then the identical command again — which reused the asset, created nothing, and updated the comment rather than adding one |
 | `upload` | **works.** Verified live: one URL back, no comment, no journal, and no deduplication — which is the point of it, not a gap |
 | `recover` | works. It only ever reads the local journal |
+| `report` | **works.** Verified live: a four-artifact report with a title, headings, a side-by-side comparison and a fold, rendered by GitHub as `<h3>`, `<h4>`, `<video>`, `<table>` and `<details>` |
+| `harvest`, `compose` | work, and upload nothing — by design, permanently |
 | `--dry-run` | works, and is meaningful: it produces a real plan and a real `--confirm-plan` token |
 
 Not published yet: the remaining work is release mechanics, not evidence.
@@ -66,19 +68,48 @@ you want video converted to a widely playable mp4 rather than uploaded as-is.
 
 ---
 
-## The three commands
+## The commands
 
 ```
 easy-cast attach <file...> --to pr | pr:<n> | issue:<n>
 easy-cast upload <file...> [--repo owner/name]
 easy-cast recover
+
+easy-cast harvest <dir...> [--out spec.json]      find media, write a report spec
+easy-cast compose --spec spec.json                print the comment it would post
+easy-cast report  --spec spec.json --to pr        upload and post that report
 ```
 
-| Command | What it does |
-| --- | --- |
-| `attach` | uploads the files and writes them into a comment on a pull request or issue. The comment is identified by a hidden marker, so a repeat run updates that comment instead of adding another |
-| `upload` | uploads and prints the URLs, posting nothing. No comment, no journal, no ledger, and **no deduplication whatsoever** — a repeat uploads again, permanently. It also has no `--allow-public` gate, and refuses the flag rather than pretending to honour it: exposure follows wherever you paste the URL, not the repository the bytes went to ([ADR 023](docs/decisions/023-upload-keeps-no-local-state.md)) |
-| `recover` | prints the local write-ahead journal: what was uploaded, and what is recorded locally but not yet referenced by any comment. It only reads — repair belongs to a real `attach` run, which is the only thing that knows the target |
+| Command | What it does | Can it create something permanent? |
+| --- | --- | --- |
+| `attach` | uploads the files and writes them into a comment on a pull request or issue. The comment is identified by a hidden marker, so a repeat run updates that comment instead of adding another | yes |
+| `upload` | uploads and prints the URLs, posting nothing. No comment, no journal, no ledger, and **no deduplication whatsoever** — a repeat uploads again, permanently. It also has no `--allow-public` gate, and refuses the flag rather than pretending to honour it: exposure follows wherever you paste the URL, not the repository the bytes went to ([ADR 023](docs/decisions/023-upload-keeps-no-local-state.md)) | yes |
+| `report` | `attach` with a composed body: several artifacts arranged by a spec you wrote — headings, per-artifact labels, before/after side by side, folds. Same marker, same ledger, same handshake | yes |
+| `recover` | prints the local write-ahead journal: what was uploaded, and what is recorded locally but not yet referenced by any comment. It only reads — repair belongs to a real `attach` run, which is the only thing that knows the target | no |
+| `harvest` | walks directories, finds media, and writes a report spec with **every label blank**. It uploads nothing, and by design never will | no |
+| `compose` | renders the exact comment a spec would post, with unmistakable placeholder URLs, so a person can read it before it exists | no |
+
+### Reports
+
+A report is several artifacts in one structured comment instead of a flat stack under one caption:
+
+```bash
+easy-cast harvest ./screenshots --out report.json   # labels come back blank, on purpose
+$EDITOR report.json                                 # open each file, write what it shows
+easy-cast compose --spec report.json                # read the comment before it exists
+easy-cast report --spec report.json --to pr --dry-run --json
+easy-cast report --spec report.json --to pr --confirm-plan=<token>
+```
+
+**`harvest` never uploads**, and that is the point rather than a limitation: a command that swept a
+directory and posted what it found would put a bulk irreversible upload one keystroke away, and would
+defeat the one obligation the CLI cannot enforce — that somebody looked at each frame. The blank
+labels are the mechanism: filling one in requires opening the file. A spec that still carries
+`harvest`'s placeholder text is refused by `report`. See
+[ADR 024](docs/decisions/024-reports-are-declared-not-swept.md).
+
+For a report the plan token covers the **spec** as well as the files, so rewriting a label after
+obtaining a token invalidates it. That is why the token format is `v2`.
 
 Flags, in full, are `easy-cast --help`. The ones that change what is at stake:
 
@@ -238,7 +269,7 @@ for a public one is public from that moment. Treat every uploaded frame as reada
 ## Design decisions
 
 The reasoning behind each of the above lives in [docs/decisions/](docs/decisions/) — records 003 to
-023, one per decision, with the alternatives that were considered and what each choice costs. The
+024, one per decision, with the alternatives that were considered and what each choice costs. The
 index is
 [docs/decisions/README.md](docs/decisions/README.md). Rather than restating them here: start with
 [003](docs/decisions/003-request-shape-is-a-stage-0-question.md) for why the endpoint is quarantined,
@@ -247,7 +278,8 @@ index is
 [017](docs/decisions/017-repair-step-not-a-guard.md) for deduplication and repair,
 [022](docs/decisions/022-allow-public-gate-after-stage-0.md) for what Stage 0 changed about the
 public-repository gate, and
-[023](docs/decisions/023-upload-keeps-no-local-state.md) for why `upload` records nothing.
+[023](docs/decisions/023-upload-keeps-no-local-state.md) for why `upload` records nothing, and
+[024](docs/decisions/024-reports-are-declared-not-swept.md) for why `harvest` never uploads.
 
 Two further documents: [docs/skill-derived-requirements.md](docs/skill-derived-requirements.md)
 records the requirements the skill imposed on the CLI surface and how each was closed or rejected,
