@@ -14,7 +14,7 @@ contract: `--json` emits exactly one JSON object whatever happens, and every fai
 
 ---
 
-## Status: `attach` works, `upload` does not
+## Status: all three commands work; not yet published
 
 Stage 0 — the probe that establishes the undocumented endpoint's wire format and response
 semantics — **has run**. What it found is in
@@ -23,14 +23,15 @@ semantics — **has run**. What it found is in
 
 | Command | State today |
 | --- | --- |
-| `attach` | **works.** Verified end to end against a real repository: dry run, real attach, then the identical command again — which reused the asset, created nothing, and updated the comment rather than adding one |
-| `upload` | **not wired.** Returns exit **5** `endpoint_unavailable` immediately |
+| `attach` | **works.** Verified end to end against a real repository, for a screenshot and for a video: dry run, real attach, then the identical command again — which reused the asset, created nothing, and updated the comment rather than adding one |
+| `upload` | **works.** Verified live: one URL back, no comment, no journal, and no deduplication — which is the point of it, not a gap |
 | `recover` | works. It only ever reads the local journal |
 | `--dry-run` | works, and is meaningful: it produces a real plan and a real `--confirm-plan` token |
 
-Still not released, and [docs/release-readiness.md](docs/release-readiness.md) says what is
-outstanding. In short: `upload` is unwired, and video types, the size ceiling, installation tokens
-and abuse detection remain unprobed — each for a stated reason rather than by oversight.
+Not published yet: the remaining work is release mechanics, not evidence.
+[docs/release-readiness.md](docs/release-readiness.md) has the checklist, the four live smoke
+results, and the list of what is still **not** established — `.webm` and `.mov`, the exact size
+boundary, installation tokens and abuse detection, each for a stated reason rather than by oversight.
 
 ---
 
@@ -76,7 +77,7 @@ easy-cast recover
 | Command | What it does |
 | --- | --- |
 | `attach` | uploads the files and writes them into a comment on a pull request or issue. The comment is identified by a hidden marker, so a repeat run updates that comment instead of adding another |
-| `upload` | uploads without posting anything. No comment, no ledger, and **no deduplication whatsoever** |
+| `upload` | uploads and prints the URLs, posting nothing. No comment, no journal, no ledger, and **no deduplication whatsoever** — a repeat uploads again, permanently. It also has no `--allow-public` gate, and refuses the flag rather than pretending to honour it: exposure follows wherever you paste the URL, not the repository the bytes went to ([ADR 023](docs/decisions/023-upload-keeps-no-local-state.md)) |
 | `recover` | prints the local write-ahead journal: what was uploaded, and what is recorded locally but not yet referenced by any comment. It only reads — repair belongs to a real `attach` run, which is the only thing that knows the target |
 
 Flags, in full, are `easy-cast --help`. The ones that change what is at stake:
@@ -89,7 +90,7 @@ Flags, in full, are `easy-cast --help`. The ones that change what is at stake:
 | `--dry-run` | plans and changes nothing: no upload, no mutating GitHub call, no temporary file, no repair. Prints a `--confirm-plan` token |
 | `--json` | exactly one JSON object on stdout, whatever the outcome, including an unhandled exception |
 | `--no-convert` | uploads video as-is instead of converting it. Toggling this back and forth costs one irreversible upload, because the conversion profile is part of the deduplication key |
-| `--allow-public` | consent to uploading into a public repository. Without it, a public target is refused with exit 6 before any byte moves |
+| `--allow-public` | **`attach` only.** Consent to uploading into a public repository; without it a public target is refused with exit 6 before any byte moves. `upload` **refuses the flag** rather than accepting it, because it has no gate for the flag to satisfy — see below |
 
 ---
 
@@ -149,11 +150,17 @@ credential, the tool exits 2 `token_not_found` and says exactly what to do.
 whatever `GITHUB_TOKEN` holds when it is set — leaving it in place would silently switch the identity
 out from under the check below.
 
-**Both sides must be the same account.** The token that uploads and the `gh` session that writes the
-comment are compared before anything is uploaded; a mismatch is exit 2 `identity_mismatch` with zero
-uploads. Uploading under one identity and commenting under another would attribute a permanent
-attachment to an account the caller never named. See
+**Both sides must be the same account.** Uploading under one identity and commenting under another
+would attribute a permanent attachment to an account the caller never named, so `attach` compares the
+two before anything is uploaded and exits 2 `identity_mismatch` with zero uploads on a mismatch. See
 [ADR 013](docs/decisions/013-upload-and-gh-identity-must-match.md).
+
+Stated precisely, because the check is weaker than it looks: both logins are currently read through
+`gh`, and `GH_TOKEN` is forwarded to `gh` whenever the token came from there — so the two are the same
+identity *by construction* and the comparison cannot presently fail. It documents the invariant rather
+than verifying it. Making it a real check means reading the identity with the upload token directly;
+that is recorded as outstanding in
+[docs/release-readiness.md](docs/release-readiness.md) rather than left to be discovered.
 
 ---
 
@@ -174,7 +181,7 @@ carries its own `nextAction`.
 | 7 | the plan token is missing or no longer matches |
 
 The full pair-by-pair table, with the retry rules and what to say to a person for each one, is in
-`skill/references/failures.md`.
+`skills/easy-cast/references/failures.md`.
 
 ---
 
@@ -231,15 +238,16 @@ for a public one is public from that moment. Treat every uploaded frame as reada
 ## Design decisions
 
 The reasoning behind each of the above lives in [docs/decisions/](docs/decisions/) — records 003 to
-022, one per decision, with the alternatives that were considered and what each choice costs. The
+023, one per decision, with the alternatives that were considered and what each choice costs. The
 index is
 [docs/decisions/README.md](docs/decisions/README.md). Rather than restating them here: start with
 [003](docs/decisions/003-request-shape-is-a-stage-0-question.md) for why the endpoint is quarantined,
 [010](docs/decisions/010-confirm-plan-binds-a-run-to-a-plan.md) for the plan handshake,
 [011](docs/decisions/011-local-event-sourced-wal-with-scoped-dedup.md) and
-[017](docs/decisions/017-repair-step-not-a-guard.md) for deduplication and repair, and
+[017](docs/decisions/017-repair-step-not-a-guard.md) for deduplication and repair,
 [022](docs/decisions/022-allow-public-gate-after-stage-0.md) for what Stage 0 changed about the
-public-repository gate.
+public-repository gate, and
+[023](docs/decisions/023-upload-keeps-no-local-state.md) for why `upload` records nothing.
 
 Two further documents: [docs/skill-derived-requirements.md](docs/skill-derived-requirements.md)
 records the requirements the skill imposed on the CLI surface and how each was closed or rejected,

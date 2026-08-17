@@ -38,17 +38,69 @@ deliberately **not** a row in the table: it falls to the default and is reported
 
 | Status | Body signal | Meaning | Observed from |
 | --- | --- | --- | --- |
-| 201 | `{"url": …}` | success | a real `.png` and a real `.gif` |
+| 201 | `{"url": …}` | success | a real `.png`, a real `.gif`, and a real `.mp4` |
 | 404 | `Not Found` | **no access, or not found — indistinguishable** | wrong `repository_id`; a repository we can read but not push to (`cli/cli`); `repository_id` omitted entirely |
 | 422 | `content_type is not included in the list of allowed content types` **and** `name has a file extension that does not match the content type` | the type or the name was refused | both recorded cases carried **both messages at once**: `.png` as `application/octet-stream`, and `.log` as `text/plain` |
+| 422 | `errors[].field === 'size'` — "size Yowza that's a big file. … less than 10MB." | the file is over the ceiling | declaring 5 GiB while sending 64 bytes, 2026-08-17 |
 | anything else | — | `endpoint_unavailable` | nothing — this is the deliberate default |
 
-Two consequences the code depends on:
+Three consequences the code depends on:
 
 - **404 must stay disjunctive.** Three unrelated causes produce a byte-identical
   response. Naming one would be a guess presented as a diagnosis.
 - **A 422 body can carry two reasons at once**, in `errors[]`. The message is
   built from all of them rather than from whichever matched first.
+- **A 422 message can carry HTML.** The size rejection is written for the web UI
+  and arrives wrapped in `<span class='btn-link'>Try again</span>` markup. The
+  classifier strips the tags before the message reaches a caller — an agent should
+  get the sentence, not a button it might try to follow. The wording is unchanged
+  and the raw body is recorded verbatim in the observation log.
+
+## The size ceiling
+
+**10MB, named by the endpoint itself**, and enforced on the **declared** `size`
+query parameter rather than on the bytes received:
+
+```
+POST …?repository_id=…&name=ceiling-declared.png&size=5368709120
+Content-Type: image/png
+<64 bytes>
+
+→ 422 {"errors":[{"resource":"UserAsset","code":"custom","field":"size",
+       "message":"size Yowza that's a big file. … with a file size less than 10MB."}]}
+```
+
+Three things follow:
+
+- an over-large file costs **one round trip, not one upload** — the endpoint
+  refuses before reading the body;
+- the question cost **no permanent asset at all**, because the size could be
+  claimed without being sent. That is why it was asked this way and not by
+  uploading something large;
+- the unit is not stated. "10MB" could be 10<sup>7</sup> or 2<sup>23</sup> bytes,
+  and the boundary was not measured — one refusal establishes the shape the
+  classifier needs, and the exact byte would cost a request per probe while
+  changing no behaviour.
+
+`checkSize` still only *warns* at the documented threshold rather than refusing.
+The endpoint remains the authority: this observation comes from one account on one
+plan, and GitHub documents a higher figure for paid-plan video.
+
+## How video renders
+
+`video/mp4` is accepted. What a bare attachment URL on its own line becomes, in
+`body_html`:
+
+```html
+<video src="https://private-user-images.githubusercontent.com/<uploader user id>/<id>-<uuid>.mp4?jwt=…"
+       controls="controls" muted="muted" …>
+```
+
+So the native player is real, and the rendering rule `render.ts` relies on — a
+video URL must be the sole content of its line — is now measured rather than
+inferred from how GitHub's own web UI writes video links. The signed URL is the
+same shape as for images, with `response-content-type=video/mp4` and a
+five-minute expiry.
 
 ## How an attachment is actually served
 
@@ -104,22 +156,30 @@ These are genuinely open, not overlooked:
 - **A classic PAT without the `repo` scope.** That credential has to be issued by
   hand through the web UI.
 - **A 400 with no declared type.** Seen before recording began, never captured.
-- **Video types and the size ceiling.** Each success would have cost another
-  permanent attachment. The image cases already establish the accept/reject shape,
-  and `mime-table.ts` remains a table of hypotheses for the types not probed.
+- **`.webm` and `.mov`.** `.mp4` is now observed; each further type would cost
+  another permanent attachment for a row the accept/reject shape already covers.
+  `mime-table.ts` remains a table of hypotheses for the types not probed.
+- **Whether the ceiling differs by plan or media type.** One account, one plan.
 - **A connection dropping after the body has been sent.** Not induced deliberately.
   The transport treats it as `request-started`, which is the conservative reading.
 
 ## Permanent artefacts created
 
-Four attachments, which **cannot be deleted**:
+Seven attachments, which **cannot be deleted**. The full accounting is in
+[release-readiness.md](release-readiness.md); by probe date:
 
-| Case | Repository it was uploaded against |
-| --- | --- |
-| request-shape investigation (`.png`) | private |
-| accepted-type check (`.gif`) | private |
-| asset-nature test (`.png`) | private, then quoted publicly |
-| public-visibility check (`.png`) | public |
+| When | Case | Repository it was uploaded against |
+| --- | --- | --- |
+| 2026-08-16 | request-shape investigation (`.png`) | private |
+| 2026-08-16 | accepted-type check (`.gif`) | private |
+| 2026-08-16 | asset-nature test (`.png`) | private, then quoted publicly |
+| 2026-08-16 | public-visibility check (`.png`) | public |
+| 2026-08-16 | `attach` live smoke (`.png`) | private |
+| 2026-08-17 | video live smoke (`.mp4`) | private |
+| 2026-08-17 | `upload` live smoke (`.png`) | private |
+
+The size-ceiling probe of 2026-08-17 created none: the size was declared rather
+than sent, so the answer cost a round trip instead of an asset.
 
 Probe issues were opened in both repositories and are closed by
 `scripts/probe/run.ts --cleanup`. The attachments are not cleaned up, because they
