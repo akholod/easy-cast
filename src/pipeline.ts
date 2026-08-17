@@ -1,22 +1,25 @@
 import { readFile, rm } from 'node:fs/promises';
-import { basename } from 'node:path';
 import type { Anomaly } from './anomalies.js';
+import {
+  asMp4,
+  base,
+  prepare,
+  worstFailureReason,
+  type PreparedFile,
+} from './batch.js';
 import {
   bodyBudgetExceeded,
   ledgerCapacityExceeded,
   planMismatch,
   planMissing,
   refusedPublic,
-  unsupportedExtension,
-  badArgs,
   EasyCastError,
 } from './errors.js';
 import { foldPartialUpload, foldState, type FileOutcome } from './exit-codes.js';
 import type { GitHubApi } from './github/api.js';
 import { assetRecorded, ledgerSynced, type Journal, type Scope } from './journal.js';
-import { computeDigest, computeSourceHash } from './media/digest.js';
-import { classifyExtension, checkSize } from './media/mime.js';
-import { captureSource, type SourceSnapshot } from './media/snapshot.js';
+import { computeDigest } from './media/digest.js';
+import type { SourceSnapshot } from './media/snapshot.js';
 import type { ConversionResult } from './media/convert.js';
 import {
   BODY_BUDGET_BYTES,
@@ -71,15 +74,6 @@ export interface PipelineDeps {
   readonly ffmpegAvailable: () => boolean;
 }
 
-interface PreparedFile {
-  readonly snapshot: SourceSnapshot;
-  readonly sourceHash: string;
-  readonly name: string;
-  readonly contentType: string;
-  readonly category: 'image' | 'video';
-  readonly sizeVerdict: 'ok' | 'warn';
-}
-
 const scopeOf = (target: ResolvedTarget, key: string): Scope => ({
   owner: target.owner,
   repo: target.repo,
@@ -87,53 +81,6 @@ const scopeOf = (target: ResolvedTarget, key: string): Scope => ({
   number: target.number,
   key,
 });
-
-/**
- * Reads every file exactly once and refuses the whole batch if any of them is
- * unusable.
- *
- * Validating everything before the first upload is what makes "the third file was
- * bad, so nothing was uploaded" true. Validating lazily would leave two permanent
- * attachments behind before discovering the problem.
- */
-function prepare(files: readonly string[]): PreparedFile[] {
-  const prepared: PreparedFile[] = [];
-  const seen = new Set<string>();
-
-  for (const path of files) {
-    const snapshot = captureSource(path);
-    const sourceHash = computeSourceHash(snapshot);
-    // First occurrence wins, matching the plan token's own de-duplication, so the
-    // same file named twice is uploaded once rather than twice.
-    if (seen.has(sourceHash)) continue;
-    seen.add(sourceHash);
-
-    const name = basename(path);
-    const kind = classifyExtension(name);
-    if (!kind) {
-      throw unsupportedExtension(
-        `${name} is not a file type GitHub accepts as an attachment. Nothing was uploaded.`,
-      );
-    }
-
-    const size = checkSize(snapshot.byteLength, kind);
-    if (size.level === 'reject') {
-      throw badArgs(`${name}: ${size.message}. Nothing was uploaded.`);
-    }
-
-    prepared.push({
-      snapshot,
-      sourceHash,
-      name,
-      contentType: kind.contentType,
-      category: kind.category,
-      sizeVerdict: size.level,
-    });
-  }
-
-  if (prepared.length === 0) throw badArgs('no files to attach');
-  return prepared;
-}
 
 export async function runAttach(
   request: PipelineRequest,
@@ -330,42 +277,6 @@ export async function runAttach(
   }
 }
 
-const asMp4 = (name: string): string => `${name.replace(/\.[^.]+$/, '')}.mp4`;
-
-type FailureReason =
-  | 'endpoint_unavailable'
-  | 'no_access_or_not_found'
-  | 'rejected_by_endpoint'
-  | 'network_unreachable';
-
-/** Worst first. Order is severity, not file order. */
-const SEVERITY: readonly FailureReason[] = [
-  'endpoint_unavailable',
-  'no_access_or_not_found',
-  'rejected_by_endpoint',
-  'network_unreachable',
-];
-
-/**
- * The most serious reason in the batch, not the first one encountered.
- *
- * Taking the first would let a batch whose opening failure was a transient
- * network error report `network_unreachable` — and therefore "retry" — even
- * though a later file had been permanently refused. The answer must not depend on
- * the order the files happened to be listed in.
- */
-function worstFailureReason(reports: readonly UploadedFileReport[]): FailureReason {
-  const seen = new Set(reports.map((report) => report.failure?.reason));
-  return SEVERITY.find((reason) => seen.has(reason)) ?? 'network_unreachable';
-}
-
-const base = (file: PreparedFile, digest: string) => ({
-  name: file.name,
-  sourceHash: file.sourceHash,
-  digest,
-});
-
-
 /**
  * Writes any URL that was recorded locally but never made it into a comment.
  *
@@ -451,7 +362,13 @@ function planOutput(
     })),
     // Whether video will actually be converted is a property of this machine, and
     // it changes what ends up uploaded. A plan that hides it is not a plan.
-    environment: { ffmpegAvailable: deps.ffmpegAvailable() },
+    //
+    // Reported only when the batch contains video, because the human plan turns
+    // this field into the sentence "video will be converted to mp4" — printed
+    // under a plan whose only file is a `.png`, that sentence is simply false.
+    ...(prepared.some((file) => file.category === 'video')
+      ? { environment: { ffmpegAvailable: deps.ffmpegAvailable() } }
+      : {}),
     recovery: {
       journalPersisted: true,
       commentLedgerPersisted: pending.length === 0,

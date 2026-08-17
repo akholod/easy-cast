@@ -7,11 +7,14 @@ import { redact, redactValues } from './secret/redact.js';
 import { createJournal } from './journal.js';
 import { recover } from './recover.js';
 import { runAttach } from './pipeline.js';
+import { runUpload } from './upload-run.js';
 import { createUploadPort } from './upload/upload.js';
+import type { GitHubApi } from './github/api.js';
 import { createGhApi } from './github/gh-cli.js';
 import { spawnScrubbed } from './secret/spawn.js';
-import { assertSameIdentity, ghAllowEnv, resolveToken } from './secret/token.js';
+import { assertSameIdentity, ghAllowEnv, resolveToken, type ResolvedToken } from './secret/token.js';
 import { readGit, currentBranch } from './target/git-reader.js';
+import { resolveRepo, type GitReader } from './target/infer-repo.js';
 import { resolveTarget } from './target/resolve.js';
 import { parseTarget } from './target/parse.js';
 import { convert, resolveFfmpeg, H264_PROFILE } from './media/convert.js';
@@ -52,7 +55,7 @@ export async function runCli(argv: readonly string[], io: Io = defaultIo): Promi
     // JSON object on stdout no matter how the run ended, including a bug in here.
     const error = toEasyCastError(thrown);
     const output = buildOutput({
-      command: parsed?.command === 'upload' ? 'upload' : parsed?.command === 'recover' ? 'recover' : 'attach',
+      command: commandFor(parsed, argv),
       reason: error.reason,
       message: redact(error.message),
       ...(error.reason === 'plan_mismatch' && isPlanContext(error.context)
@@ -81,6 +84,21 @@ export async function runCli(argv: readonly string[], io: Io = defaultIo): Promi
     emit(output, parsed?.json ?? argv.includes('--json'), io);
     return output.exitCode;
   }
+}
+
+/**
+ * Which command this object is reporting on, including when the parse is the
+ * thing that failed.
+ *
+ * `parsed` is undefined exactly when `parseArgs` threw, and that is a common
+ * case — a refused flag is a parse error. Defaulting to `attach` there told a
+ * machine caller that its `upload` invocation was an `attach`, which is a wrong
+ * field in the one object the contract promises. The verb is taken from argv for
+ * the same reason `--json` is.
+ */
+function commandFor(parsed: ParsedArgs | undefined, argv: readonly string[]): 'upload' | 'attach' | 'recover' {
+  const command = parsed?.command ?? argv[0];
+  return command === 'upload' || command === 'recover' ? command : 'attach';
 }
 
 const isPlanContext = (
@@ -160,16 +178,6 @@ async function execute(parsed: ParsedArgs, io: Io): Promise<CliJsonOutput> {
 
   if (parsed.command === 'recover') return recover(journal);
 
-  if (parsed.command === 'upload') {
-    // `upload` is not wired up until the endpoint's wire format is established;
-    // claiming otherwise would be worse than saying so.
-    return buildOutput({
-      command: 'upload',
-      reason: 'endpoint_unavailable',
-      message: 'upload is not available until the endpoint protocol is established (stage 0 pending).',
-    });
-  }
-
   const source = await resolveToken();
   const api = createGhApi({ spawn: spawnScrubbed, allowEnv: ghAllowEnv(source.source) });
   // With an explicit --repo there is nothing to infer, so git is not consulted at
@@ -178,6 +186,8 @@ async function execute(parsed: ParsedArgs, io: Io): Promise<CliJsonOutput> {
   const git = parsed.repo
     ? { topLevel: () => undefined, remotes: () => [] }
     : await readGit(cwd);
+
+  if (parsed.command === 'upload') return upload(parsed, io, cwd, source, api, git);
 
   const target = await resolveTarget(parseTarget(parsed.to!), parsed.repo, {
     api,
@@ -233,6 +243,73 @@ async function execute(parsed: ParsedArgs, io: Io): Promise<CliJsonOutput> {
       assertIdentity: (uploadLogin, commentLogin) =>
         assertSameIdentity(uploadLogin, commentLogin, source.source),
       now: () => new Date().toISOString(),
+      tmpPaths: () => tmp,
+      ffmpegAvailable: () => resolveFfmpeg() !== undefined,
+    },
+  );
+}
+
+/**
+ * `upload` shares the credential, the `gh` client and the repository inference
+ * with `attach`, and nothing else: no target to resolve, no comment to find, no
+ * journal to open.
+ */
+async function upload(
+  parsed: ParsedArgs,
+  io: Io,
+  cwd: string,
+  source: ResolvedToken,
+  api: GitHubApi,
+  git: GitReader,
+): Promise<CliJsonOutput> {
+  const inferred = resolveRepo(parsed.repo, cwd, git);
+  const info = await api.getRepo(inferred.owner, inferred.repo);
+  if (!info) {
+    // Disjunctive on purpose: a 404 cannot tell "no such repository" from "this
+    // token cannot see it", and the upload endpoint answers the same way.
+    throw targetNotFound(
+      `${inferred.owner}/${inferred.repo} is not visible to this token — it either does not exist ` +
+        'or the token has no access to it.',
+      { owner: inferred.owner, repo: inferred.repo, repoSource: inferred.source },
+    );
+  }
+
+  if (inferred.source !== 'flag') {
+    io.stderr(
+      redact(
+        `easy-cast: repository ${inferred.owner}/${inferred.repo} inferred from git remote (${inferred.source})\n`,
+      ),
+    );
+  }
+
+  const tmp: string[] = [];
+  return runUpload(
+    {
+      command: 'upload',
+      files: parsed.files,
+      dryRun: parsed.dryRun,
+      noConvert: parsed.noConvert,
+      confirmPlan: parsed.confirmPlan,
+    },
+    {
+      uploads: createUploadPort(),
+      resolveRepo: async () => ({
+        owner: inferred.owner,
+        repo: inferred.repo,
+        repoSource: inferred.source,
+        visibility: info.visibility,
+        repositoryId: info.id,
+        anomalies: inferred.anomalies,
+      }),
+      convert: async (snapshot, noConvert) => {
+        const result = await convert(snapshot, noConvert ? null : H264_PROFILE, Number.MAX_SAFE_INTEGER, {
+          spawn: spawnScrubbed,
+          tmpDir: resolve(cwd, STATE_DIR, 'tmp'),
+        });
+        if (result.converted) tmp.push(result.path);
+        return result;
+      },
+      resolveUploadToken: async () => ({ token: source.token }),
       tmpPaths: () => tmp,
       ffmpegAvailable: () => resolveFfmpeg() !== undefined,
     },

@@ -340,10 +340,18 @@ describe('dry run', () => {
   // A plan that hides the size or whether conversion will even happen is not a
   // plan anyone can judge before consenting to something irreversible.
   it('states each file’s size and verdict, and whether ffmpeg is available here', async () => {
-    const output = await runAttach(request([file('a.png', 'aaa')], { dryRun: true }), harness().deps);
+    const output = await runAttach(request([file('clip.mp4', 'aaa')], { dryRun: true }), harness().deps);
     expect(output.uploaded[0].sizeBytes).toBe(3);
     expect(output.uploaded[0].sizeVerdict).toBe('ok');
     expect(output.environment).toEqual({ ffmpegAvailable: true });
+  });
+
+  // The human plan renders this field as "video will be converted to mp4". Under
+  // a plan whose only file is a screenshot that sentence is false, and a plan
+  // that says false things is worse than one that says less.
+  it('says nothing about ffmpeg when the batch has no video for it to convert', async () => {
+    const output = await runAttach(request([file('a.png', 'aaa')], { dryRun: true }), harness().deps);
+    expect(output.environment).toBeUndefined();
   });
 });
 

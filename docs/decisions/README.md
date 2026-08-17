@@ -19,3 +19,5 @@
 - [019 — Unknown versions are quarantined, never interpreted](019-unknown-versions-are-quarantined.md): every versioned artifact fails closed on an unrecognized version instead of guessing.
 - [020 — Public npm package under MIT](020-public-npm-package-under-mit.md): publication is public and MIT-licensed, making `scrubObservation()` a blocking security gate.
 - [021 — Decision Gate outcome](021-decision-gate-outcome.md): DG1/DG2/DG3/DG5 as decided, and why DG4 is deliberately left open until after the Stage 0 public-asset probe.
+- [022 — What `--allow-public` actually protects](022-allow-public-gate-after-stage-0.md): exposure follows where the URL is quoted, not the repository it was uploaded against; the gate is kept for `attach` for a corrected reason and is absent from `upload`.
+- [023 — `upload` keeps no local state](023-upload-keeps-no-local-state.md): no journal, no ledger, no deduplication — a record that could never be cleared would be worse than none, and the flags that would imply otherwise are refused.

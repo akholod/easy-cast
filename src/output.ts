@@ -101,6 +101,31 @@ export const URL_NOT_LIVE_UNTIL_QUOTED =
   'not a failure. GitHub serves the image through a short-lived signed URL it substitutes when ' +
   'rendering the comment. Do not re-upload: a second upload cannot be undone.';
 
+/**
+ * Said on every `upload`, because it is the whole difference from `attach` and
+ * nothing in the output would otherwise show it.
+ *
+ * `attach` is safe to re-run: the journal and the comment ledger make a repeat
+ * reuse what already exists. `upload` has neither, so a repeat is a second
+ * permanent asset. A caller that assumes the two commands share `attach`'s
+ * idempotency finds out only after the bytes are unrecallable.
+ */
+export const UPLOAD_RECORDS_NOTHING =
+  'upload keeps no record: no journal entry, no comment ledger, and no deduplication of any kind. ' +
+  'Running it again on the same file uploads it again, and neither copy can ever be deleted. ' +
+  'Keep the URL — it is the only thing that survives this command.';
+
+/**
+ * Stage 0 established that the asset is scoped to the uploading user, not to the
+ * repository. `upload` therefore has no `--allow-public` gate: there is nothing
+ * for it to gate, because `upload` quotes the URL nowhere (ADR 022).
+ */
+export const UPLOAD_EXPOSURE_FOLLOWS_QUOTING =
+  'Who can read this file is decided by wherever you paste the URL — not by the repository it was ' +
+  'uploaded against. GitHub serves the bytes through a short-lived signed URL scoped to the ' +
+  'uploading account, so anyone who can see the URL in rendered markdown can fetch them. That is ' +
+  'why upload has no public-repository gate: there is nothing for it to gate.';
+
 export interface OutputDraft {
   readonly command: 'upload' | 'attach' | 'recover';
   readonly reason: Reason;

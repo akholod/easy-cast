@@ -83,7 +83,27 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     if (parsed.to === undefined) throw badArgs('attach needs --to pr, --to pr:<n> or --to issue:<n>');
     if (files.length === 0) throw badArgs('attach needs at least one file');
   }
-  if (rawCommand === 'upload' && files.length === 0) throw badArgs('upload needs at least one file');
+  if (rawCommand === 'upload') {
+    if (files.length === 0) throw badArgs('upload needs at least one file');
+    // Refused rather than ignored. Each of these would look like it was doing
+    // something — and `--allow-public` would look like it was protecting
+    // something — on a command that posts nowhere.
+    if (parsed.to !== undefined) {
+      throw badArgs('upload posts nothing, so it takes no --to. Use attach to put a file on an issue or PR.');
+    }
+    if (parsed.caption !== undefined) {
+      throw badArgs('upload writes no comment, so a --caption would go nowhere.');
+    }
+    if (parsed.key !== undefined) {
+      throw badArgs('upload writes no comment, so there is no comment for --key to address.');
+    }
+    if (parsed.allowPublic) {
+      throw badArgs(
+        'upload has no public-repository gate, so --allow-public would protect nothing: an asset is ' +
+          'readable by whoever can see the URL you paste, not by the repository it was uploaded against.',
+      );
+    }
+  }
   if (rawCommand === 'recover' && files.length > 0) throw badArgs('recover takes no files');
 
   return parsed;
@@ -105,15 +125,20 @@ export const HELP = `easy-cast — attach visual evidence to a GitHub issue or p
   easy-cast recover
 
 Flags
-  --to <target>        pr (from the current branch), pr:<n>, or issue:<n>
+  --to <target>        attach only: pr (from the current branch), pr:<n>, issue:<n>
   --repo owner/name    override the repository inferred from the git remote
-  --caption <text>     a line above the attachments
-  --key <key>          address a specific comment; defaults to a hash of the files
+  --caption <text>     attach only: a line above the attachments
+  --key <key>          attach only: address a specific comment; defaults to a hash of the files
   --dry-run            print the plan and a --confirm-plan token; changes nothing
   --json               emit exactly one JSON object, whatever the outcome
   --no-convert         upload video as-is instead of converting it to mp4
-  --allow-public       consent to uploading into a public repository
+  --allow-public       attach only: consent to uploading into a public repository
   --confirm-plan=<t>   the token printed by a preceding --dry-run
+
+attach posts the files into a comment it owns, and a repeat run reuses what it
+already uploaded. upload prints URLs and keeps no record at all: no journal, no
+ledger, no deduplication, and no public-repository gate — an asset is readable by
+whoever can see the URL you paste, not by the repository it was uploaded against.
 
 An uploaded attachment can never be deleted. --confirm-plan guarantees that what
 is uploaded matches the plan the token was computed for; it does not prove anyone

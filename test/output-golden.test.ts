@@ -94,10 +94,39 @@ describe('the CLI never breaks the one-object rule', () => {
     expect(sink.out()).not.toContain('ghp_FAKETOKENFAKETOKEN');
   });
 
-  it('reports upload as unavailable rather than pretending it works', async () => {
+  // `upload` used to answer `endpoint_unavailable` unconditionally, and this test
+  // pinned that. It is wired now, so what is pinned instead is the boundary that
+  // still holds without touching the network: a flag that would mean nothing on a
+  // command which posts nowhere is refused rather than quietly ignored.
+  it.each([
+    ['--to', ['upload', 'a.png', '--to', 'pr', '--json']],
+    ['--caption', ['upload', 'a.png', '--caption', 'hi', '--json']],
+    ['--key', ['upload', 'a.png', '--key', 'k', '--json']],
+    ['--allow-public', ['upload', 'a.png', '--allow-public', '--json']],
+  ])('refuses %s on upload instead of ignoring it', async (_flag, argv) => {
     const sink = capture();
-    const code = await runCli(['upload', 'a.png', '--json'], sink.io);
-    expect(code).toBe(5);
-    expect(JSON.parse(sink.out())).toMatchObject({ reason: 'endpoint_unavailable', command: 'upload' });
+    const code = await runCli(argv, sink.io);
+
+    expect(code).toBe(2);
+    expect(JSON.parse(sink.out())).toMatchObject({
+      command: 'upload',
+      reason: 'bad_args',
+      nextAction: 'fix-args',
+    });
+  });
+
+  it('says why --allow-public is refused rather than just that it is', async () => {
+    const sink = capture();
+    await runCli(['upload', 'a.png', '--allow-public', '--json'], sink.io);
+    expect(JSON.parse(sink.out()).message).toContain('no public-repository gate');
+  });
+
+  // The parse is what failed, so there is no ParsedArgs to read the command from.
+  // Falling back to `attach` told a machine caller its `recover` call was an
+  // `attach` — a wrong field in the one object the contract promises.
+  it('reports the command that was actually invoked even when the parse failed', async () => {
+    const sink = capture();
+    expect(await runCli(['recover', 'a.png', '--json'], sink.io)).toBe(2);
+    expect(JSON.parse(sink.out())).toMatchObject({ command: 'recover', reason: 'bad_args' });
   });
 });
