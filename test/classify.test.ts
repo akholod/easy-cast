@@ -28,6 +28,39 @@ const BOTH_REASONS =
 const ONE_REASON =
   '{"message":"Validation Failed","errors":[{"resource":"UserAsset","code":"custom","field":"content_type",' +
   '"message":"content_type is not included in the list of allowed content types"}]}';
+// Verbatim from the 2026-08-17 size probe, HTML and all. It was produced by
+// declaring 5 GiB while sending 64 bytes, so it cost no attachment.
+const TOO_BIG =
+  '{"message":"Validation Failed","documentation_url":"https://docs.github.com/rest","errors":[' +
+  '{"resource":"UserAsset","code":"custom","field":"size","message":"size Yowza that\'s a big file. ' +
+  '\\u003cspan class=\'drag-and-drop-error-info\'\\u003e \\u003cspan class=\'btn-link\'\\u003eTry again' +
+  '\\u003c/span\\u003e with a file size less than 10MB.\\u003c/span\\u003e"}]}';
+
+describe('a file over the endpoint’s size ceiling', () => {
+  it('is a known refusal, not an unknown: nothing was accepted', () => {
+    const outcome = classifyUploadResponse(422, NO_HEADERS, TOO_BIG);
+    expect(outcome).toMatchObject({
+      ok: false,
+      reason: 'rejected_by_endpoint',
+      state: 'known',
+      retryable: false,
+    });
+  });
+
+  // The message is written for the web UI. An agent should get the sentence, not
+  // a span it might try to click.
+  it('reports the endpoint’s own wording with the markup stripped out', () => {
+    const outcome = classifyUploadResponse(422, NO_HEADERS, TOO_BIG);
+    const message = outcome.ok ? '' : outcome.message;
+
+    expect(message).toContain('with a file size less than 10MB.');
+    expect(message).toContain("Yowza that's a big file.");
+    expect(message).not.toContain('<span');
+    expect(message).not.toContain('btn-link');
+    // Collapsed, so removing the tags does not leave the gaps they occupied.
+    expect(message).not.toMatch(/ {2}/);
+  });
+});
 
 describe('the responses stage 0 actually saw', () => {
   it('reads the url out of a 201', () => {
@@ -203,7 +236,7 @@ describe('the curated table stays in step with the code', () => {
     provenance: { run: string };
     rows: { status: number; outcome: string }[];
     default: { outcome: string };
-    wire: { phases: number };
+    wire: { phases: number; validatesDeclaredSizeBeforeBody: boolean };
   };
 
   it('classifies every status the table records the way the table says', () => {
@@ -213,6 +246,10 @@ describe('the curated table stays in step with the code', () => {
       const actual = outcome.ok ? 'ok' : outcome.reason;
       expect(actual).toBe(row.outcome);
     }
+  });
+
+  it('agrees that the declared size is checked before the body is read', () => {
+    expect(table.wire.validatesDeclaredSizeBeforeBody).toBe(true);
   });
 
   it('agrees that the protocol is single phase', () => {
@@ -228,7 +265,9 @@ describe('the curated table stays in step with the code', () => {
   // is what notices.
   it('was derived from the same probe run the fixture records', () => {
     expect(table.version).toBe(CLASSIFICATION_VERSION);
-    expect(CLASSIFICATION_PROVENANCE).toContain('2026-08-16');
-    expect(table.provenance.run).toContain('2026-08-16');
+    for (const date of ['2026-08-16', '2026-08-17']) {
+      expect(CLASSIFICATION_PROVENANCE).toContain(date);
+      expect(table.provenance.run).toContain(date);
+    }
   });
 });

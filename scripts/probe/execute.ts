@@ -27,8 +27,19 @@ export function upload(
   contentType: string,
   repositoryId: number | undefined,
   token = TOKEN,
+  /**
+   * Overrides the declared `size` without changing what is sent.
+   *
+   * Only the size-ceiling case uses it, and it exists precisely so that case
+   * costs nothing: asking about a 5 GiB limit by actually sending 5 GiB would
+   * either take an hour or leave a 5 GiB attachment that can never be deleted.
+   * Declaring the size and sending a few bytes asks the same question for free —
+   * and if the endpoint answers about the mismatch instead, that is an answer
+   * too, about the order in which it validates.
+   */
+  declaredSize = bytes.length,
 ): Promise<RawResponse> {
-  const query = new URLSearchParams({ name, size: String(bytes.length) });
+  const query = new URLSearchParams({ name, size: String(declaredSize) });
   if (repositoryId !== undefined) query.set('repository_id', String(repositoryId));
 
   return new Promise((resolve) => {

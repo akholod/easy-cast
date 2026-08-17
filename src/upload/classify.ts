@@ -13,9 +13,9 @@ import type { UploadOutcome } from './port.js';
  * and fixtures/endpoint/classification.json.
  */
 
-export const CLASSIFICATION_VERSION = 1;
+export const CLASSIFICATION_VERSION = 2;
 export const CLASSIFICATION_PROVENANCE =
-  'stage 0, 2026-08-16, akholod/easy-cast-probe and akholod/easy-cast-probe-public';
+  'stage 0, 2026-08-16 and 2026-08-17, akholod/easy-cast-probe and akholod/easy-cast-probe-public';
 
 interface Rejection {
   readonly field?: string;
@@ -148,9 +148,27 @@ function describeRejection(status: number, body: string): string {
     // Not JSON; the raw excerpt below is the only evidence there is.
   }
 
-  const detail = reasons.size > 0 ? [...reasons].join('; ') : redact(body).slice(0, 300);
+  const detail = reasons.size > 0 ? [...reasons].map(plainText).join('; ') : redact(body).slice(0, 300);
   return `the endpoint refused the file (HTTP ${status}): ${detail}`;
 }
+
+/**
+ * The endpoint's messages are written for its web UI, not for a caller of an API.
+ * The observed size rejection reads:
+ *
+ *   size Yowza that's a big file. <span class='drag-and-drop-error-info'>
+ *   <span class='btn-link'>Try again</span> with a file size less than 10MB.</span>
+ *
+ * Passing that through verbatim hands an agent markup and a button label to
+ * interpret. The wording is kept exactly as sent — only the tags go, because they
+ * describe a page nobody here is looking at. The raw body is still recorded
+ * unaltered in the observation log; this affects the message, not the evidence.
+ */
+const plainText = (message: string): string =>
+  message
+    .replace(/<[^>]*>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 function unavailable(status: number, body: string, extra?: string): UploadOutcome {
   return {

@@ -1,7 +1,7 @@
 {
-  "version": 1,
+  "version": 2,
   "provenance": {
-    "run": "stage 0, 2026-08-16, against akholod/easy-cast-probe and akholod/easy-cast-probe-public",
+    "run": "stage 0, 2026-08-16 and 2026-08-17, against akholod/easy-cast-probe and akholod/easy-cast-probe-public",
     "observations": "fixtures/endpoint/observations.jsonl",
     "note": "Every row below was produced by a real request. Anything not listed here is deliberately unmatched and resolves to endpoint_unavailable."
   },
@@ -20,7 +20,9 @@
     },
     "body": "the raw bytes",
     "phases": 1,
-    "observedNote": "Single phase. There is no policy call and no second host. The Content-Type header carries the declared type; a request without one was refused during exploratory work, though that exchange predates the observation log."
+    "observedNote": "Single phase. There is no policy call and no second host. The Content-Type header carries the declared type; a request without one was refused during exploratory work, though that exchange predates the observation log.",
+    "validatesDeclaredSizeBeforeBody": true,
+    "sizeNote": "The declared `size` query parameter is validated before the body is read: a request declaring 5 GiB while sending 64 bytes was refused 422 on size alone. An over-large file therefore costs one round trip, not one upload."
   },
   "rows": [
     {
@@ -54,6 +56,17 @@
       "observed": "Both messages arrived together in errors[] in BOTH recorded cases: a .png declared as application/octet-stream, and a .log declared as text/plain. A single-reason 422 has not been observed.",
       "multiSignal": true,
       "why": "A body can carry more than one reason at once, so the message must be disjunctive rather than picking whichever matched first."
+    },
+    {
+      "status": 422,
+      "bodySignals": [
+        "size Yowza that's a big file."
+      ],
+      "outcome": "rejected_by_endpoint",
+      "retryable": false,
+      "observed": "errors[0] = {resource: UserAsset, code: custom, field: size, message: \"size Yowza that's a big file. <span class='drag-and-drop-error-info'> <span class='btn-link'>Try again</span> with a file size less than 10MB.</span>\"}. Produced by declaring size=5368709120 while sending 64 bytes, so no asset was created.",
+      "ceilingBytes": "10MB, stated by the endpoint itself; the unit (MB vs MiB) is not stated and was not measured.",
+      "why": "The endpoint names its own ceiling, and it enforces it on the declared size rather than on what was sent. The message is written for the web UI and carries HTML, which is stripped before the message reaches a caller — the wording is unchanged, only the markup goes."
     }
   ],
   "default": {
@@ -65,7 +78,7 @@
     "Behaviour with an installation token (ghs_) was not tested; CI is out of scope and GITHUB_TOKEN is deliberately never read.",
     "A classic PAT without the repo scope was not tested \u2014 that credential has to be issued by hand.",
     "Behaviour when the connection drops after the body has been sent was not induced deliberately; the transport treats it as request-started, which is the conservative reading.",
-    "Video types (.mp4, .webm, .mov) and the size ceiling were not probed: each success would have cost another permanent asset, and the image cases already establish the accept/reject shape.",
+    ".webm and .mov were not probed. .mp4 was: video/mp4 was accepted (201) on 2026-08-17 through the real CLI, and the bare URL rendered as a <video controls> player. Each further type would cost another permanent asset for a row the accept/reject shape already covers.",
     "A 400 'Invalid Content-Type' was seen during exploratory work before recording began, and is NOT in observations.jsonl. It is therefore not a row here: a 400 falls to the default and is reported as endpoint_unavailable until it has been recorded properly."
   ]
 }
