@@ -14,7 +14,7 @@ requirement discovered after the freeze costs a breaking change.
 | `closed` | satisfied by an acceptance criterion of the named story — the criterion is the evidence |
 | `rejected` | deliberately not done; the reason is recorded, and the skill compensates |
 
-Source of each row: the skill section that hit the question. `§n` refers to `skill/SKILL.md`.
+Source of each row: the skill section that hit the question. `§n` refers to `skills/easy-cast/SKILL.md`.
 
 ---
 

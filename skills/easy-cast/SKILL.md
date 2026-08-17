@@ -384,6 +384,31 @@ become an attachment just because it exists — §1 still decides that.
 
 ---
 
+## 12. Use `attach`. `upload` is the sharp one
+
+Both commands put bytes on GitHub permanently. Only one of them is safe to re-run.
+
+| | `attach` | `upload` |
+| --- | --- | --- |
+| Writes a comment | yes, one it owns and can find again | no |
+| Re-running the same command | **reuses** the asset, updates the comment, creates nothing | **uploads again** — a second permanent asset |
+| Records what it did | journal on disk, plus a ledger inside the comment | **nothing at all** |
+| `--allow-public` | gates a public repository | **refused** — it has no gate to satisfy |
+| After it finishes | the comment URL is the result | the printed URL is the *only* result; lose it and the asset is unreachable but still permanent |
+
+So: if the file is going into an issue, a pull request or a comment — which is what this skill is
+about — **use `attach`**. Reach for `upload` only when you genuinely need a URL to put somewhere
+`attach` cannot reach: a wiki page, a release note, a comment on a different repository.
+
+Two consequences that catch people:
+
+- **`upload` is not idempotent, and nothing makes it so.** If a workflow can run twice, `upload`
+  costs one permanent asset per run. Keep the URL yourself, or use `attach`, which keeps it for you.
+- **The repository you upload against protects nothing.** Access follows whoever can read the place
+  you paste the URL. `upload` prints this on every run; it is not boilerplate.
+
+---
+
 ## References
 
 | File | Read it when |

@@ -23,8 +23,23 @@ describe('package metadata', () => {
     expect(pkg.packageManager).toBe('pnpm@11.13.1');
   });
 
-  it('ships only build output and docs', () => {
-    expect(pkg.files).toEqual(['dist/src', 'README.md', 'LICENSE']);
+  it('ships the build output, the skill and the docs — and nothing else', () => {
+    expect(pkg.files).toEqual(['dist/src', 'skills', 'README.md', 'LICENSE']);
+  });
+
+  // The README links into the skill, and a tarball whose links dangle is a
+  // README that lies to whoever installed the package.
+  it('ships the skill the README points at', () => {
+    expect(read('skills/easy-cast/SKILL.md')).toContain('name: easy-cast');
+    expect(read('skills/easy-cast/references/failures.md').length).toBeGreaterThan(0);
+    expect(read('README.md')).toContain('skills/easy-cast/references/failures.md');
+  });
+
+  // `skills/<name>/SKILL.md` is what skill installers discover. The old `skill/`
+  // was not, so the same file could only be read by someone who cloned the repo.
+  it('puts the skill where an installer will find it', () => {
+    expect(pkg.files).toContain('skills');
+    expect(() => read('skills/easy-cast/SKILL.md')).not.toThrow();
   });
 });
 
