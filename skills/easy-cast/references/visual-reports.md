@@ -1,21 +1,49 @@
 # Visual reports
 
 Several artifacts in one structured comment, instead of a flat stack of images under a single
-caption. Three commands, and only one of them can create anything permanent:
+caption. Four commands, and only one of them can create anything permanent:
 
 | Command | Does | Uploads |
 | --- | --- | --- |
 | `harvest <dir...>` | finds media, writes a report spec with **every label blank** | never |
 | `compose --spec f` | prints the exact comment that spec would post | never |
+| `render --spec f --out-dir d` | writes that comment to a folder, artifacts copied beside it | never |
 | `report --spec f --to <target>` | uploads and posts it | **yes** |
 
 ```bash
 easy-cast harvest ./screenshots --out report.json
 # open each file, write what it shows, delete the placeholder text
 easy-cast compose --spec report.json
-easy-cast report --spec report.json --to pr --dry-run --json
+easy-cast render --spec report.json --out-dir ./evidence     # a folder, deletable
+easy-cast report --spec report.json --to pr --dry-run --json # or GitHub, permanent
 easy-cast report --spec report.json --to pr --confirm-plan=<token>
 ```
+
+## `render` when the destination is not decided yet
+
+One spec, one renderer, three resolutions: `compose` fills the URLs with `NOT-UPLOADED-YET:`,
+`render` fills them with relative paths into a sibling `assets/`, and `report` fills them with real
+asset URLs. So the folder holds the **same document** the comment would — including the rule that a
+video URL sits alone on its line, which is what makes a video play rather than render as a dead link.
+
+That makes local-first the cheap default. A run that ends in a folder promotes to a comment with no
+re-authoring: same spec, same file, `--to` instead of `--out-dir`.
+
+| | `render --out-dir` | `report --to` |
+| --- | --- | --- |
+| Reversible | yes — delete the folder | **never** |
+| Needs a credential | no | yes |
+| Plan token | none; there is no plan to bind | `--dry-run` then `--confirm-plan` |
+| Public-repository gate | none; the folder is as public as wherever you copy it | `--allow-public` |
+| Refuses a non-empty destination | yes, and there is no `--force` | n/a |
+
+Two things it does **not** do, both on purpose:
+
+- **The local review does not carry over.** Nothing links a rendered folder to a later `report`, and
+  §4 fires again for that run — the plan token is computed fresh and the public-repository gate is
+  unasked until it is asked. Rendering locally is not a review credit.
+- **It takes `--spec` only.** No directory argument, ever. A report is declared, not swept, and the
+  local sink is not the one path that publishes whatever happened to be lying around.
 
 ## When a report is the right shape
 

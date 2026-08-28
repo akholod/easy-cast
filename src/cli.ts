@@ -9,6 +9,7 @@ import { recover } from './recover.js';
 import { runAttach } from './pipeline.js';
 import { runUpload } from './upload-run.js';
 import { assertEdited, readSpec, runCompose, runHarvest } from './report/commands.js';
+import { runRender } from './report/render-local.js';
 import { pathsOf } from './report/spec.js';
 import { createUploadPort } from './upload/upload.js';
 import type { GitHubApi } from './github/api.js';
@@ -104,7 +105,8 @@ function commandFor(parsed: ParsedArgs | undefined, argv: readonly string[]): Co
     command === 'recover' ||
     command === 'report' ||
     command === 'harvest' ||
-    command === 'compose'
+    command === 'compose' ||
+    command === 'render'
     ? command
     : 'attach';
 }
@@ -197,6 +199,7 @@ async function execute(parsed: ParsedArgs, io: Io): Promise<CliJsonOutput> {
     });
   }
   if (parsed.command === 'compose') return runCompose(parsed.spec!);
+  if (parsed.command === 'render') return runRender(parsed.spec!, parsed.outDir!);
 
   const source = await resolveToken();
   const api = createGhApi({ spawn: spawnScrubbed, allowEnv: ghAllowEnv(source.source) });

@@ -1,10 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { COMMAND_VERBS, HELP } from '../src/cli-args.js';
 
 const root = resolve(import.meta.dirname, '..');
 const read = (relative: string) => readFileSync(resolve(root, relative), 'utf8');
 const pkg = JSON.parse(read('package.json')) as Record<string, any>;
+
+const readMarkdownUnder = (relative: string): string => {
+  const walk = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) return walk(path);
+      return entry.name.endsWith('.md') ? [readFileSync(path, 'utf8')] : [];
+    });
+  return walk(resolve(root, relative)).join('\n');
+};
+
+/** Whole word, so the verb `render` is not satisfied by the word "rendered". */
+const mentions = (haystack: string, verb: string): boolean =>
+  new RegExp(`\\b${verb}\\b`).test(haystack);
 
 describe('package metadata', () => {
   it('publishes under the name and binaries fixed by DG1', () => {
@@ -40,6 +55,38 @@ describe('package metadata', () => {
   it('puts the skill where an installer will find it', () => {
     expect(pkg.files).toContain('skills');
     expect(() => read('skills/easy-cast/SKILL.md')).not.toThrow();
+  });
+});
+
+/**
+ * A verb that ships undocumented is a verb nobody will use, and the skill is how
+ * an agent learns the surface exists at all.
+ *
+ * Scoped to the shipped skill **directory**, not `SKILL.md` alone, and that is a
+ * requirement rather than a weakening: `recover` has always been documented only
+ * in `references/failures.md`, so the narrower assertion would be red on an
+ * untouched tree. Matched as a whole word, because a substring check is a check
+ * that cannot fail — `SKILL.md` was full of "rendered" and "rendering" long
+ * before the `render` verb existed.
+ */
+describe('the shipped skill documents the CLI surface', () => {
+  const skill = readMarkdownUnder('skills/easy-cast');
+  /**
+   * The synopsis block, not the whole of HELP. Searching the text for each verb
+   * anywhere would be satisfied by a passing mention in the prose at the bottom,
+   * so deleting a command's own usage line would go unnoticed — which is the one
+   * thing this is for.
+   */
+  const synopsis = new Set([...HELP.matchAll(/^\s+easy-cast\s+([a-z-]+)/gm)].map((match) => match[1]));
+
+  it.each(COMMAND_VERBS)('documents the %s verb in the shipped skill', (verb) => {
+    expect(mentions(skill, verb)).toBe(true);
+  });
+
+  // Both directions: a verb with no usage line, and a usage line for a verb that
+  // no longer exists.
+  it('gives every verb its own line in the HELP synopsis, and no others', () => {
+    expect([...synopsis].sort()).toEqual([...COMMAND_VERBS].sort());
   });
 });
 
