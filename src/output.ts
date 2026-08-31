@@ -49,11 +49,19 @@ export interface TargetReport {
 }
 
 /**
- * `harvest` and `compose` are local and non-mutating — they read files and write
- * a document — but they answer on the same contract as everything else, because a
- * caller that has to special-case two commands will special-case them wrongly.
+ * `harvest`, `compose` and `render` are local and non-mutating — they read files
+ * and write a document — but they answer on the same contract as everything else,
+ * because a caller that has to special-case three commands will special-case them
+ * wrongly.
  */
-export type CommandName = 'upload' | 'attach' | 'recover' | 'report' | 'harvest' | 'compose';
+export type CommandName =
+  | 'upload'
+  | 'attach'
+  | 'recover'
+  | 'report'
+  | 'harvest'
+  | 'compose'
+  | 'render';
 
 export interface CliJsonOutput {
   readonly schema: typeof SCHEMA;
